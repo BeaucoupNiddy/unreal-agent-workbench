@@ -1,0 +1,17 @@
+{
+  "name": "Jambalaya Agent Console",
+  "short_name": "Jambalaya Agent",
+  "description": "Use Jambalaya Agent securely from devices on your tailnet.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#21120c",
+  "theme_color": "#fff3e0",
+  "icons": [
+    {
+      "src": "/favicon-jambalaya.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

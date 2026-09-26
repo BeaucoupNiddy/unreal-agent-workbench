@@ -1,0 +1,14 @@
+{
+  "name": "apple-productivity-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lazy local MCP bridge for Apple Notes and Calendar",
+  "scripts": {
+    "build:calendar": "./build-calendar-helper.sh",
+    "check": "node --check server.mjs && node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

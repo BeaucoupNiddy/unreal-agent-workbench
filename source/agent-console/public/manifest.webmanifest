@@ -1,0 +1,18 @@
+{
+  "name": "Unreal Agent Console",
+  "short_name": "Unreal Agent",
+  "description": "Use Unreal Agent securely from devices on your tailnet.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f100e",
+  "theme_color": "#0f100e",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

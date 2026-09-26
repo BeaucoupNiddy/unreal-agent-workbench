@@ -1,0 +1,188 @@
+ObjC.import("Foundation");
+
+function value(object, property, fallback = null) {
+  try {
+    const candidate = object[property];
+    return typeof candidate === "function" ? candidate.call(object) : candidate;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function iso(valueToFormat) {
+  if (!valueToFormat) return null;
+  const date = new Date(valueToFormat);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function plainText(html) {
+  return String(html || "")
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .trim();
+}
+
+function noteRecord(note, includeBody) {
+  const body = plainText(value(note, "body", ""));
+  const container = value(note, "container");
+  return {
+    id: String(value(note, "id", "")),
+    title: String(value(note, "name", "Untitled")),
+    folder: String(value(container, "name", "")),
+    createdAt: iso(value(note, "creationDate")),
+    modifiedAt: iso(value(note, "modificationDate")),
+    ...(includeBody ? { body } : { preview: body.slice(0, 280) })
+  };
+}
+
+function notesSearch(input) {
+  const app = Application("Notes");
+  const query = String(input.query || "").toLowerCase();
+  const folder = String(input.folder || "").toLowerCase();
+  const limit = Math.max(1, Math.min(50, Number(input.limit) || 20));
+  const matches = [];
+  const notes = app.notes();
+  for (let index = 0; index < notes.length && matches.length < limit; index += 1) {
+    const record = noteRecord(notes[index], false);
+    if (folder && record.folder.toLowerCase() !== folder) continue;
+    if (query && !`${record.title}\n${record.preview}`.toLowerCase().includes(query)) continue;
+    matches.push(record);
+  }
+  return { notes: matches, count: matches.length };
+}
+
+function notesGet(input) {
+  const app = Application("Notes");
+  const target = String(input.id || "");
+  const notes = app.notes();
+  for (let index = 0; index < notes.length; index += 1) {
+    if (String(value(notes[index], "id", "")) === target) return { note: noteRecord(notes[index], true) };
+  }
+  throw new Error("Note not found.");
+}
+
+function notesCreate(input) {
+  const app = Application("Notes");
+  const title = String(input.title || "").trim();
+  if (!title) throw new Error("A note title is required.");
+  const requestedFolder = String(input.folder || "").trim();
+  let folder = null;
+  if (requestedFolder) {
+    const folders = app.folders();
+    for (let index = 0; index < folders.length; index += 1) {
+      if (String(value(folders[index], "name", "")) === requestedFolder) { folder = folders[index]; break; }
+    }
+    if (!folder) throw new Error(`Notes folder not found: ${requestedFolder}`);
+  } else {
+    const account = value(app, "defaultAccount");
+    folder = value(account, "defaultFolder") || app.folders()[0];
+  }
+  const escapedBody = String(input.body || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+  const note = app.make({ new: "note", at: folder, withProperties: { name: title, body: escapedBody } });
+  return { created: true, note: noteRecord(note, false) };
+}
+
+function calendarList() {
+  const app = Application("Calendar");
+  return { calendars: app.calendars().map((calendar) => ({
+    name: String(value(calendar, "name", "")),
+    writable: Boolean(value(calendar, "writable", false))
+  })) };
+}
+
+function eventRecord(event, calendarName) {
+  return {
+    id: String(value(event, "uid", value(event, "id", ""))),
+    calendar: calendarName,
+    title: String(value(event, "summary", "Untitled")),
+    start: iso(value(event, "startDate")),
+    end: iso(value(event, "endDate")),
+    allDay: Boolean(value(event, "alldayEvent", false)),
+    location: String(value(event, "location", "")),
+    notes: String(value(event, "description", ""))
+  };
+}
+
+function calendarSearch(input) {
+  const app = Application("Calendar");
+  const now = new Date();
+  const start = input.start ? new Date(input.start) : now;
+  const end = input.end ? new Date(input.end) : new Date(now.getTime() + 30 * 86400000);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) throw new Error("Use a valid start/end date range.");
+  const query = String(input.query || "").toLowerCase();
+  const requestedCalendar = String(input.calendar || "").toLowerCase();
+  const limit = Math.max(1, Math.min(100, Number(input.limit) || 30));
+  const matches = [];
+  const calendars = app.calendars();
+  for (let calendarIndex = 0; calendarIndex < calendars.length; calendarIndex += 1) {
+    const calendar = calendars[calendarIndex];
+    const calendarName = String(value(calendar, "name", ""));
+    if (requestedCalendar && calendarName.toLowerCase() !== requestedCalendar) continue;
+    const events = calendar.events();
+    for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
+      const record = eventRecord(events[eventIndex], calendarName);
+      const eventStart = new Date(record.start);
+      const eventEnd = new Date(record.end);
+      if (eventEnd < start || eventStart > end) continue;
+      if (query && !`${record.title}\n${record.location}\n${record.notes}`.toLowerCase().includes(query)) continue;
+      matches.push(record);
+      if (matches.length >= limit) break;
+    }
+    if (matches.length >= limit) break;
+  }
+  matches.sort((left, right) => String(left.start).localeCompare(String(right.start)));
+  return { events: matches, count: matches.length, range: { start: start.toISOString(), end: end.toISOString() } };
+}
+
+function calendarToday(input) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  end.setMilliseconds(-1);
+  return calendarSearch({ ...input, start: start.toISOString(), end: end.toISOString() });
+}
+
+function calendarCreate(input) {
+  const app = Application("Calendar");
+  const title = String(input.title || "").trim();
+  const start = new Date(input.start);
+  const end = new Date(input.end);
+  if (!title || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+    throw new Error("A title and a valid start/end range are required.");
+  }
+  const requestedCalendar = String(input.calendar || "").trim();
+  const calendars = app.calendars();
+  let calendar = null;
+  for (let index = 0; index < calendars.length; index += 1) {
+    const candidate = calendars[index];
+    if (requestedCalendar ? String(value(candidate, "name", "")) === requestedCalendar : Boolean(value(candidate, "writable", false))) {
+      calendar = candidate; break;
+    }
+  }
+  if (!calendar) throw new Error(requestedCalendar ? `Writable calendar not found: ${requestedCalendar}` : "No writable calendar was found.");
+  const event = app.Event({
+    summary: title,
+    startDate: start,
+    endDate: end,
+    alldayEvent: Boolean(input.allDay),
+    location: String(input.location || ""),
+    description: String(input.notes || "")
+  });
+  calendar.events.push(event);
+  return { created: true, event: eventRecord(event, String(value(calendar, "name", ""))) };
+}
+
+function run(argv) {
+  const action = argv[0];
+  const input = JSON.parse(argv[1] || "{}");
+  const handlers = { notesSearch, notesGet, notesCreate, calendarList, calendarToday, calendarSearch, calendarCreate };
+  if (!handlers[action]) throw new Error(`Unknown native action: ${action}`);
+  return JSON.stringify(handlers[action](input));
+}

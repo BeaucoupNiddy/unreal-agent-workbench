@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101116" />
+    <meta name="description" content="A local browser interface for Unreal Agent." />
+    <title>Unreal Agent</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="/" aria-label="Unreal Agent home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span>Unreal Agent</span>
+        </a>
+        <button class="new-chat" id="newChat" type="button"><span>＋</span> New chat <kbd>⌘ K</kbd></button>
+        <div class="section-label">RECENT</div>
+        <nav class="session-list" id="sessionList" aria-label="Recent conversations"></nav>
+        <div class="sidebar-bottom">
+          <div class="workspace-chip"><span class="folder-icon">▰</span><span><small>WORKING IN</small><strong id="workspaceName">Loading…</strong></span></div>
+          <button class="settings-button" id="openSettings" type="button"><span class="settings-icon">⚙</span> Settings <span class="settings-shortcut">⌘ ,</span></button>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <button class="mobile-menu" id="mobileMenu" type="button" aria-label="Open conversations">☰</button>
+          <div class="topbar-title"><span class="crumb-muted">Workspace</span><span class="crumb-slash">/</span><span id="topWorkspace">Loading…</span></div>
+          <div class="topbar-actions"><span class="connection" id="connection"><i></i><span>Checking runner…</span></span><button class="mobile-new-chat" id="mobileNewChat" type="button" aria-label="Start a new chat" title="New chat">+</button><button class="top-settings" id="topSettings" type="button" aria-label="Open settings" title="Settings">⚙</button></div>
+        </header>
+
+        <section class="conversation" id="conversation" aria-live="polite">
+          <div class="welcome" id="welcome">
+            <div class="welcome-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            <p class="eyebrow">YOUR LOCAL CODING AGENT</p>
+            <h1>What are we<br /><span>working on?</span></h1>
+            <p class="welcome-copy">Ask Unreal Agent to explore, explain, or make changes in your selected workspace.</p>
+            <div class="suggestions">
+              <button type="button" data-prompt="Explain the structure of this project and point out where I should start."><span>⌕</span><strong>Explore this project</strong><small>Get a quick tour of the codebase</small><b>↗</b></button>
+              <button type="button" data-prompt="Review this project for bugs or problems. Do not make any changes; report your findings."><span>⌁</span><strong>Find a bug</strong><small>Review the code and report findings</small><b>↗</b></button>
+              <button type="button" data-prompt="Help me implement a feature: "><span>✳</span><strong>Build a feature</strong><small>Describe an improvement you want</small><b>↗</b></button>
+            </div>
+          </div>
+          <div class="messages" id="messages"></div>
+          <div class="run-status" id="runStatus" hidden><span class="spinner"></span><span id="runStatusText">Working…</span></div>
+          <div class="bottom-anchor" id="bottomAnchor"></div>
+        </section>
+
+        <footer class="composer-area">
+          <form class="composer" id="composer">
+            <textarea id="prompt" rows="1" placeholder="Message Unreal Agent…" aria-label="Message Unreal Agent"></textarea>
+            <div class="composer-bottom"><span class="composer-hint"><kbd>↵</kbd> to send <span>·</span> <kbd>⇧ ↵</kbd> for a new line <span>·</span> send while working to choose Steer or Queue</span><button class="send-button" id="sendButton" type="submit" aria-label="Send message" title="Send message"><span>↑</span></button><button class="stop-button" id="stopButton" type="button" hidden><span>■</span> Stop</button></div>
+          </form>
+          <p class="safety-note">Runs locally in your workspace <span>·</span> Review changes before using them</p>
+        </footer>
+      </main>
+    </div>
+
+    <dialog class="settings-dialog" id="settingsDialog">
+      <form class="settings-form" id="settingsForm">
+        <div class="dialog-heading"><div><p class="eyebrow">PREFERENCES</p><h2>Settings</h2></div><button class="close-button" id="closeSettings" type="button" aria-label="Close settings">×</button></div>
+        <label class="field-label" for="provider">Model provider</label>
+        <select id="provider" name="provider"><option value="openai-codex">OpenAI Codex</option><option value="openrouter">OpenRouter</option></select>
+        <label class="field-label" for="model">Model name</label>
+        <input id="model" name="model" type="text" autocomplete="off" required />
+        <div class="provider-key" id="providerKey" hidden>
+          <label class="field-label" for="openRouterKey">OpenRouter API key <span id="keyConfigured"></span></label>
+          <input id="openRouterKey" name="openRouterKey" type="password" autocomplete="new-password" placeholder="sk-or-v1-…" />
+          <div class="key-actions"><span>Stored in your macOS Keychain, not in this browser.</span><label><input id="clearKey" type="checkbox" /> Remove saved key</label></div>
+        </div>
+        <label class="field-label" for="workspace">Workspace folder</label>
+        <div class="workspace-input"><input id="workspace" name="workspace" type="text" required /><button id="browseFolder" type="button">Browse…</button></div>
+        <label class="permission-option"><input id="bashEnabled" name="bashEnabled" type="checkbox" /><span><strong>Allow Bash commands</strong><small>Enables shell commands requested by the agent. Leave off for safer, tool-limited runs.</small></span></label>
+        <div class="settings-error" id="settingsError" role="alert"></div>
+        <div class="dialog-footer"><button class="cancel-button" id="cancelSettings" type="button">Cancel</button><button class="save-button" id="saveSettings" type="submit">Save settings</button></div>
+      </form>
+    </dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

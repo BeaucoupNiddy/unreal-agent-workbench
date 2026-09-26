@@ -1,0 +1,24 @@
+{
+  "name": "unreal-agent-acp",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "ACP bridge for the Unreal Labs agent harness",
+  "bin": {
+    "unreal-agent-acp": "bin/unreal-agent-acp.mjs",
+    "unreal-apply-patch": "bin/unreal-apply-patch.mjs",
+    "unreal-capability": "bin/unreal-capability.mjs"
+  },
+  "scripts": {
+    "check": "node --check bin/unreal-agent-acp.mjs && node --test test/*.test.mjs",
+    "start": "node bin/unreal-agent-acp.mjs"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.5.0",
+    "mcp-remote": "^0.14.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

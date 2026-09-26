@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f5f2" />
+    <meta name="description" content="A focused local console for Unreal Agent." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Unreal Agent" />
+    <title>Unreal Agent</title>
+    <link id="favicon" rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link id="manifest" rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css?v=10" />
+  </head>
+  <body data-theme="system" data-accent="lime" data-brand="default">
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="window-drag"></div>
+        <div class="brand-row">
+          <a class="brand" id="brandHome" href="/" aria-label="Unreal Agent home">
+            <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+              <path class="brand-steam" d="M10 10c-1.5-2.1 1.5-2.7 0-5M16 10c-1.5-2.1 1.5-2.7 0-5M22 10c-1.5-2.1 1.5-2.7 0-5" />
+              <path class="brand-bowl" d="M4.5 14.25h23c-.75 7.4-5.25 11.25-11.5 11.25S5.25 21.65 4.5 14.25Z" />
+              <path class="brand-rim" d="M4 14.25h24c0 2.1-5.37 3.8-12 3.8s-12-1.7-12-3.8Z" />
+              <circle cx="10" cy="14.25" r="1.05" /><circle cx="16" cy="15.5" r="1.05" /><circle cx="22" cy="14.25" r="1.05" />
+            </svg>
+            <span id="brandName">Unreal Agent</span>
+          </a>
+          <button class="icon-button quiet" id="collapseSidebar" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">‹</button>
+        </div>
+
+        <button class="new-thread" id="newThread" type="button" title="Start a one-off chat outside any project"><span>＋</span> New one-off chat <kbd>⌘ K</kbd></button>
+        <button class="add-project" id="addProject" type="button"><span>▰</span> Add project</button>
+
+        <div class="sidebar-section">
+          <div class="section-heading"><span>Projects</span><span class="session-count" id="sessionCount"></span></div>
+          <nav class="session-list project-list" id="sessionList" aria-label="Projects and chats">
+            <div class="session-skeleton"><i></i><i></i><i></i></div>
+          </nav>
+        </div>
+
+        <div class="sidebar-footer">
+          <button class="profile-row" id="openPreferences" type="button">
+            <span class="profile-avatar">PN</span>
+            <span><strong>Local workspace</strong><small>Hydra connected</small></span>
+            <span class="chevron">⌄</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div class="task-heading">
+            <button class="icon-button mobile-menu" id="mobileMenu" type="button" aria-label="Open project and chat list">☰</button>
+            <div>
+              <h1 id="taskTitle">Select a project</h1>
+              <p id="taskPath">Add a folder to organize your chats.</p>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <span class="live-state" id="liveState"><i></i><span>Connecting</span></span>
+            <button class="icon-button" id="moreActions" type="button" disabled aria-label="Open workspace in Zed" title="Open workspace in Zed">↗</button>
+          </div>
+        </header>
+
+        <section class="conversation" id="conversation">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-orbit" aria-hidden="true"><svg class="brand-mark large" viewBox="0 0 32 32" focusable="false">
+              <path class="brand-steam" d="M10 10c-1.5-2.1 1.5-2.7 0-5M16 10c-1.5-2.1 1.5-2.7 0-5M22 10c-1.5-2.1 1.5-2.7 0-5" />
+              <path class="brand-bowl" d="M4.5 14.25h23c-.75 7.4-5.25 11.25-11.5 11.25S5.25 21.65 4.5 14.25Z" />
+              <path class="brand-rim" d="M4 14.25h24c0 2.1-5.37 3.8-12 3.8s-12-1.7-12-3.8Z" />
+              <circle cx="10" cy="14.25" r="1.05" /><circle cx="16" cy="15.5" r="1.05" /><circle cx="22" cy="14.25" r="1.05" />
+            </svg></div>
+            <p class="eyebrow" id="brandEyebrow">UNREAL AGENT CONSOLE</p>
+            <h2 id="welcomeTitle">Your work,<br /><em>without the clutter.</em></h2>
+            <p id="welcomeCopy">Add a project folder to get started. Each project keeps its chats together.</p>
+            <div class="starter-actions">
+              <button id="starterNewChat" type="button"><span>⌘</span><strong>Start a chat</strong><small>Work in the selected project</small></button>
+              <button id="starterAddProject" type="button"><span>▰</span><strong>Add a project</strong><small>Choose a folder on this Mac</small></button>
+            </div>
+          </div>
+          <div class="messages" id="messages" hidden></div>
+        </section>
+
+        <footer class="composer-wrap">
+          <div class="control-strip" id="controlStrip">
+            <button type="button" id="modelControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span class="control-dot lime"></span><span id="modelLabel">Model</span><b>⌄</b></button>
+            <button type="button" id="permissionControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span>◫</span><span id="permissionLabel">Workspace</span><b>⌄</b></button>
+            <button type="button" id="reasoningControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span>◌</span><span id="reasoningLabel">Medium</span><b>⌄</b></button>
+            <button type="button" class="usage-control" id="usageControl" aria-controls="controlPopover" aria-haspopup="true" aria-expanded="false" title="View token and cost usage" disabled><span>Usage</span><span class="usage-label" id="usageLabel">$0.00</span><b>⌄</b></button>
+            <div class="control-popover" id="controlPopover" role="region" hidden></div>
+          </div>
+          <form class="composer" id="composer">
+            <div class="attachment-list" id="attachmentList" aria-live="polite" hidden></div>
+            <textarea id="prompt" rows="1" placeholder="Ask Unreal Agent anything" aria-label="Message Unreal Agent" disabled></textarea>
+            <div class="composer-actions">
+              <input id="imagePicker" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
+              <button class="attach-button" id="attachImage" type="button" aria-label="Attach images" disabled title="Attach images">＋</button>
+              <span class="composer-context" id="composerContext">Select a task to begin</span>
+              <button class="stop-button" id="stopTask" type="button" aria-label="Stop task" title="Stop task" hidden>■</button>
+              <button class="send-button" type="submit" aria-label="Send steering message" title="Send a message or steer the active task" disabled>↑</button>
+            </div>
+          </form>
+          <div class="drop-overlay" id="dropOverlay" aria-hidden="true"><span>Drop images to add them to your message</span></div>
+          <p class="footnote" id="brandFootnote">Unreal Agent runs locally. Review important changes before shipping.</p>
+        </footer>
+      </main>
+    </div>
+    <dialog class="modal" id="projectDialog" aria-labelledby="projectDialogTitle">
+      <form class="modal-card" id="projectForm">
+        <div class="modal-heading"><div><p id="projectDialogEyebrow">NEW PROJECT</p><h2 id="projectDialogTitle">Add a project folder</h2></div><button type="button" id="closeProjectDialog" aria-label="Close">×</button></div>
+        <label id="projectNameField" hidden>Project name<input id="projectName" maxlength="100" autocomplete="off" /></label>
+        <label id="projectPathField">Folder path<input id="projectPath" autocomplete="off" placeholder="/Users/you/Projects/my-app" required /></label>
+        <button class="browse-folder" id="browseFolder" type="button">Browse folders…</button>
+        <p class="modal-note" id="projectDialogNote">The folder is used as the workspace source for chats in this project. Existing chats in that folder will appear here too.</p>
+        <div class="modal-actions"><button class="danger" id="deleteProject" type="button" hidden>Delete project</button><span></span><button type="button" id="cancelProject">Cancel</button><button class="primary" id="saveProject" type="submit">Add project</button></div>
+      </form>
+    </dialog>
+    <dialog class="modal" id="deleteProjectDialog" aria-labelledby="deleteProjectTitle" aria-describedby="deleteProjectCopy">
+      <div class="modal-card">
+        <div class="modal-heading"><div><p>DELETE PROJECT</p><h2 id="deleteProjectTitle">Delete this project?</h2></div><button type="button" id="closeDeleteProject" aria-label="Close">×</button></div>
+        <p class="modal-note" id="deleteProjectCopy">The project will be removed from the sidebar. Its folder, files, and chat history will not be deleted.</p>
+        <div class="modal-actions"><button type="button" id="cancelDeleteProject">Cancel</button><button class="danger" id="confirmDeleteProject" type="button">Delete project</button></div>
+      </div>
+    </dialog>
+    <dialog class="modal" id="deleteChatDialog" aria-labelledby="deleteChatTitle" aria-describedby="deleteChatCopy">
+      <div class="modal-card">
+        <div class="modal-heading"><div><p>DELETE CHAT</p><h2 id="deleteChatTitle">Delete this chat?</h2></div><button type="button" id="closeDeleteChatDialog" aria-label="Close">×</button></div>
+        <p class="modal-note" id="deleteChatCopy">This permanently deletes the conversation and its history. Your project files will not be changed.</p>
+        <div class="modal-actions"><button type="button" id="cancelDeleteChat">Cancel</button><button class="danger" id="confirmDeleteChat" type="button">Delete chat</button></div>
+      </div>
+    </dialog>
+    <dialog class="modal" id="preferencesDialog">
+      <form method="dialog" class="modal-card preferences-card" id="preferencesForm">
+        <div class="modal-heading"><div><p>APPEARANCE</p><h2>Make it feel like yours</h2></div><button value="cancel" aria-label="Close">×</button></div>
+        <fieldset><legend>Theme</legend><div class="segmented theme-options"><label><input type="radio" name="theme" value="system" />System</label><label><input type="radio" name="theme" value="light" />Light</label><label><input type="radio" name="theme" value="dark" />Dark</label><label><input type="radio" name="theme" value="warm" />Warm</label></div><p class="theme-hint">System follows your Mac’s appearance automatically.</p></fieldset>
+        <fieldset><legend>Accent</legend><div class="swatches"><label><input type="radio" name="accent" value="lime" /><i class="lime"></i>Lime</label><label><input type="radio" name="accent" value="blue" /><i class="blue"></i>Blue</label><label><input type="radio" name="accent" value="amber" /><i class="amber"></i>Amber</label></div></fieldset>
+        <fieldset><legend>Identity</legend><label class="switch-row brand-switch"><span>Jambalaya Agent mode<small>Rename the assistant and season the interface with a warm, festive palette</small></span><input type="checkbox" name="jambalayaMode" /></label></fieldset>
+        <fieldset><legend>Conversation</legend><label class="switch-row"><span>Show agent reasoning<small>Keep thought sections visible</small></span><input type="checkbox" name="showThoughts" /></label></fieldset>
+        <fieldset><legend>Background generation</legend>
+          <label class="switch-row"><span>Project memory<small>Keep a compact summary available to other chats in the same project</small></span><input type="checkbox" name="memoryEnabled" /></label>
+          <label class="setting-select"><span>Memory model</span><select name="memoryModel" aria-label="Memory model"></select></label>
+          <label class="switch-row"><span>Automatic chat titles<small>Name new chats after their first response</small></span><input type="checkbox" name="titleEnabled" /></label>
+          <label class="setting-select"><span>Title model</span><select name="titleModel" aria-label="Title model"></select></label>
+          <p class="theme-hint">Memory stays project-scoped and is retrieved only when a chat needs prior context. One-off chats are excluded.</p>
+        </fieldset>
+        <fieldset><legend>Local capabilities</legend>
+          <label class="switch-row"><span>Apple Notes<small>Search, read, and create notes after approval</small></span><input type="checkbox" name="appleNotes" /></label>
+          <label class="switch-row"><span>Apple Calendar<small>Search and create events after approval</small></span><input type="checkbox" name="appleCalendar" /></label>
+          <p class="theme-hint">Capabilities are lazy and apply to new chats. macOS asks for Automation access the first time one runs.</p>
+        </fieldset>
+        <div class="modal-actions"><button class="primary" id="savePreferences" value="default">Save preferences</button></div>
+      </form>
+    </dialog>
+    <div class="toast" id="toast" role="status" hidden></div>
+    <script type="module" src="/app.js?v=14"></script>
+  </body>
+</html>

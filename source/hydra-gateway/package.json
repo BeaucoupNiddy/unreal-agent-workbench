@@ -1,0 +1,11 @@
+{
+  "name": "unreal-agent-remote-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned Hydra ACP gateway and browser for Unreal Agent",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@hydra-acp/browser": "0.1.58",
+    "@hydra-acp/cli": "0.1.191"
+  }
+}
