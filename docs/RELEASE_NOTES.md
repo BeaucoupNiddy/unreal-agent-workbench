@@ -1,9 +1,7 @@
-The developed Unreal Agent Console packaged as a self-contained macOS app.
+# Unreal Agent 1.0.1
 
-**Apple Silicon, macOS 14+.** Download the `.pkg` for the standard Applications installer, or the `.zip` for installation into your user Applications folder without administrator access. Open Unreal Agent and complete first-run setup with your own OpenRouter key or existing compatible Codex credentials. No developer tools are required for ordinary OpenRouter use.
+This update adds built-in **Claude Code** and **OpenAI Codex** connections to Settings on every installation. They do not include a signed-in account: install Claude Code or Codex separately and run `claude login` or `codex login` in Terminal. Refresh the provider in Settings after signing in. Claude Code chats use the Claude Code CLI; the bundled Codex runner reads a compatible local login file but cannot refresh expired credentials.
 
-Includes the front end, Hydra, ACP bridge, Node, runner, optional Apple integrations, documentation, uninstall helper (ZIP), licenses, runtime provenance, and SHA-256 checksums.
+**Local models:** Add local models in Settings to connect a running oMLX, Ollama, LM Studio, llama.cpp, vLLM or compatible server. Discover models or specify IDs manually, then use the connection for new chats. Server installation, model downloads and any optional local API key are your responsibility.
 
-The app is ad-hoc signed and is **not notarized**. macOS may require explicit Open Anyway approval. OpenRouter-only setup disables optional Codex-based automatic titles/project memory. The pinned Codex adapter does not implement sign-in or token refresh. Existing developer installs are detected and require deliberate migration.
-
-Validated with 79 automated component/installer tests, native compilation, signature/archive checks, and a clean-HOME HTTP smoke test. A clean macOS account install, Gatekeeper/privacy prompts, and live recipient-provider authentication have not been exercised. See the repository's validation and troubleshooting guides.
+Also includes updated provider defaults, local-model inference and background-generation support, improved console/chat experience, and integration tests. Existing chats retain their selected provider/model; changing defaults affects new chats. The app is ad-hoc signed and not notarized. A live paid provider request and clean-account macOS installation have not been tested. See the user guide and validation record.

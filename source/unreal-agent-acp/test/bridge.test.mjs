@@ -151,6 +151,32 @@ test("loads and exposes the live OpenRouter catalog in the model picker", async 
   }
 });
 
+test("recommends Claude Sonnet 5.5 when it is in the OpenRouter catalog", async () => {
+  const previousProvider = process.env.UNREAL_HARNESS_LLM_PROVIDER;
+  const previousModel = process.env.UNREAL_HARNESS_LLM_MODEL;
+  process.env.UNREAL_HARNESS_LLM_PROVIDER = "openrouter";
+  process.env.UNREAL_HARNESS_LLM_MODEL = "anthropic/claude-sonnet-5.5";
+  try {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "unreal-agent-acp-sonnet-55-"));
+    const bridge = new UnrealAgentBridge({
+      dataDir,
+      fetch: async () => ({ ok: true, json: async () => ({ data: [
+        { id: "anthropic/claude-sonnet-5.5", name: "Anthropic: Claude Sonnet 5.5" }
+      ] }) })
+    });
+    const created = await bridge.newSession({ cwd: here });
+    const model = created.configOptions.find((option) => option.id === "model");
+    assert.equal(model.options[0].value, "anthropic/claude-sonnet-5.5");
+    assert.equal(model.options[0].recommended, true);
+    assert.equal(model.options[0].name, "Anthropic: Claude Sonnet 5.5");
+  } finally {
+    if (previousProvider === undefined) delete process.env.UNREAL_HARNESS_LLM_PROVIDER;
+    else process.env.UNREAL_HARNESS_LLM_PROVIDER = previousProvider;
+    if (previousModel === undefined) delete process.env.UNREAL_HARNESS_LLM_MODEL;
+    else process.env.UNREAL_HARNESS_LLM_MODEL = previousModel;
+  }
+});
+
 test("refreshes old price-less OpenRouter cache entries", async () => {
   const dataDir = await mkdtemp(path.join(tmpdir(), "unreal-agent-acp-old-catalog-"));
   await writeFile(path.join(dataDir, "openrouter-models.json"), JSON.stringify({
@@ -169,6 +195,150 @@ test("refreshes old price-less OpenRouter cache entries", async () => {
   assert.equal(models[0].name, "New name · $1 in / $2 out per 1M tokens");
   await bridge.loadOpenRouterModels();
   assert.equal(requests, 1);
+});
+
+test("refresh_models bypasses the cache, updates live sessions, and keeps the cache on failure", async () => {
+  const previousProvider = process.env.UNREAL_HARNESS_LLM_PROVIDER;
+  const previousModel = process.env.UNREAL_HARNESS_LLM_MODEL;
+  process.env.UNREAL_HARNESS_LLM_PROVIDER = "openrouter";
+  process.env.UNREAL_HARNESS_LLM_MODEL = "vendor/alpha";
+  try {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "unreal-agent-acp-refresh-models-"));
+    let ids = ["vendor/alpha"];
+    let offline = false;
+    let requests = 0;
+    const bridge = new UnrealAgentBridge({ dataDir, fetch: async () => {
+      requests++;
+      if (offline) throw new Error("network down");
+      return { ok: true, json: async () => ({ data: ids.map((id) => ({ id, name: id })) }) };
+    } });
+    const created = await bridge.newSession({ cwd: here });
+    const values = (result) => result.configOptions.find((option) => option.id === "model").options.map((option) => option.value);
+    assert.deepEqual(values(created), ["vendor/alpha"]);
+    ids = ["vendor/alpha", "vendor/beta"];
+    const refreshed = await bridge.setConfigOption({ sessionId: created.sessionId, configId: "refresh_models", value: "refresh" });
+    assert.equal(requests, 2);
+    assert.deepEqual(values(refreshed).sort(), ["vendor/alpha", "vendor/beta"]);
+    offline = true;
+    await assert.rejects(
+      bridge.setConfigOption({ sessionId: created.sessionId, configId: "refresh_models", value: "refresh" }),
+      /Could not refresh the model list: network down/
+    );
+    const again = await bridge.setConfigOption({ sessionId: created.sessionId, configId: "model", value: "vendor/beta" });
+    assert.deepEqual(values(again).sort(), ["vendor/alpha", "vendor/beta"]);
+  } finally {
+    if (previousProvider === undefined) delete process.env.UNREAL_HARNESS_LLM_PROVIDER;
+    else process.env.UNREAL_HARNESS_LLM_PROVIDER = previousProvider;
+    if (previousModel === undefined) delete process.env.UNREAL_HARNESS_LLM_MODEL;
+    else process.env.UNREAL_HARNESS_LLM_MODEL = previousModel;
+  }
+});
+
+test("starts new chats on the default model from settings when it is available", async () => {
+  const previousProvider = process.env.UNREAL_HARNESS_LLM_PROVIDER;
+  const previousModel = process.env.UNREAL_HARNESS_LLM_MODEL;
+  process.env.UNREAL_HARNESS_LLM_PROVIDER = "openrouter";
+  delete process.env.UNREAL_HARNESS_LLM_MODEL;
+  try {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "unreal-agent-acp-default-model-"));
+    const fetch = async () => ({ ok: true, json: async () => ({ data: [{ id: "vendor/alpha" }, { id: "vendor/beta" }] }) });
+    const bridge = new UnrealAgentBridge({ dataDir, fetch });
+    const current = (result) => result.configOptions.find((option) => option.id === "model").currentValue;
+    await writeFile(path.join(dataDir, "default-model.json"), JSON.stringify({ model: "vendor/beta" }));
+    assert.equal(current(await bridge.newSession({ cwd: here })), "vendor/beta");
+    await writeFile(path.join(dataDir, "default-model.json"), JSON.stringify({ model: "vendor/gone" }));
+    assert.notEqual(current(await bridge.newSession({ cwd: here })), "vendor/gone");
+    await writeFile(path.join(dataDir, "default-model.json"), JSON.stringify({ model: "" }));
+    assert.notEqual(current(await bridge.newSession({ cwd: here })), "vendor/beta");
+  } finally {
+    if (previousProvider === undefined) delete process.env.UNREAL_HARNESS_LLM_PROVIDER;
+    else process.env.UNREAL_HARNESS_LLM_PROVIDER = previousProvider;
+    if (previousModel === undefined) delete process.env.UNREAL_HARNESS_LLM_MODEL;
+    else process.env.UNREAL_HARNESS_LLM_MODEL = previousModel;
+  }
+});
+
+test("provider catalogs can be browsed and refreshed without creating a chat", async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), "unreal-provider-catalog-"));
+  let ids = ["vendor/alpha"], requests = 0;
+  const bridge = new UnrealAgentBridge({ dataDir, fetch: async () => {
+    requests++;
+    return { ok: true, json: async () => ({ data: ids.map((id) => ({ id })) }) };
+  } });
+  const catalog = await bridge.providerCatalog();
+  assert.deepEqual(catalog.providers.map((provider) => provider.id), ["openai-codex", "claude-code", "openrouter"]);
+  assert.ok(catalog.providers[0].models.some((model) => model.value === "gpt-6-astra"));
+  assert.ok(catalog.providers[0].models.some((model) => model.value === "gpt-6-sol"));
+  assert.deepEqual(catalog.providers[2].models.map((model) => model.value), ["vendor/alpha"]);
+  assert.equal(bridge.sessions.size, 0);
+  ids = ["vendor/alpha", "vendor/beta"];
+  const updated = await bridge.providerCatalog({ refreshProvider: "openrouter" });
+  assert.equal(requests, 2);
+  assert.equal(updated.providers[2].models.length, 2);
+  assert.ok(updated.providers[2].updatedAt);
+  const cached = await new UnrealAgentBridge({ dataDir, fetch: async () => { throw new Error("Must reuse the shared catalog"); } }).providerCatalog();
+  assert.equal(cached.providers[2].models.length, 2);
+  await assert.rejects(bridge.providerCatalog({ refreshProvider: "unknown" }), /valid provider/);
+});
+
+test("open chats pick up a catalog refreshed in settings without downloading it again", async () => {
+  const previousProvider = process.env.UNREAL_HARNESS_LLM_PROVIDER;
+  const previousModel = process.env.UNREAL_HARNESS_LLM_MODEL;
+  process.env.UNREAL_HARNESS_LLM_PROVIDER = "openrouter";
+  process.env.UNREAL_HARNESS_LLM_MODEL = "vendor/alpha";
+  try {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "unreal-catalog-sync-"));
+    let ids = ["vendor/alpha"], requests = 0;
+    const fetch = async () => { requests++; return { ok: true, json: async () => ({ data: ids.map((id) => ({ id })) }) }; };
+    const bridge = new UnrealAgentBridge({ dataDir, fetch });
+    const first = await bridge.newSession({ cwd: here });
+    const second = await bridge.newSession({ cwd: here });
+    ids.push("vendor/beta");
+    await new UnrealAgentBridge({ dataDir, fetch }).providerCatalog({ refreshProvider: "openrouter" });
+    const refreshed = await bridge.setConfigOption({ sessionId: first.sessionId, configId: "refresh_models", value: "cached" });
+    assert.equal(requests, 2);
+    assert.ok(refreshed.configOptions.find((option) => option.id === "model").options.some((option) => option.value === "vendor/beta"));
+    assert.equal(bridge.sessions.get(second.sessionId).openRouterModels.length, 2);
+  } finally {
+    if (previousProvider === undefined) delete process.env.UNREAL_HARNESS_LLM_PROVIDER;
+    else process.env.UNREAL_HARNESS_LLM_PROVIDER = previousProvider;
+    if (previousModel === undefined) delete process.env.UNREAL_HARNESS_LLM_MODEL;
+    else process.env.UNREAL_HARNESS_LLM_MODEL = previousModel;
+  }
+});
+
+test("saving a provider affects new chats while resumed chats keep their original provider and model", async () => {
+  const previousProvider = process.env.UNREAL_HARNESS_LLM_PROVIDER;
+  const previousModel = process.env.UNREAL_HARNESS_LLM_MODEL;
+  delete process.env.UNREAL_HARNESS_LLM_PROVIDER;
+  delete process.env.UNREAL_HARNESS_LLM_MODEL;
+  try {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "unreal-default-provider-"));
+    const bridge = new UnrealAgentBridge({ dataDir, fetch: async () => ({ ok: true,
+      json: async () => ({ data: [{ id: "vendor/coder" }] }) }) });
+    const file = path.join(dataDir, "default-model.json");
+    await writeFile(file, JSON.stringify({ provider: "openrouter", model: "vendor/coder" }));
+    const first = await bridge.newSession({ cwd: here });
+    assert.equal(bridge.sessions.get(first.sessionId).provider, "openrouter");
+    assert.equal(bridge.sessions.get(first.sessionId).model, "vendor/coder");
+    await writeFile(file, JSON.stringify({ provider: "openai-codex", model: "gpt-6-luna" }));
+    const second = await bridge.newSession({ cwd: here });
+    assert.equal(bridge.sessions.get(second.sessionId).provider, "openai-codex");
+    assert.equal(bridge.sessions.get(second.sessionId).model, "gpt-6-luna");
+    await bridge.closeSession({ sessionId: first.sessionId });
+    await bridge.resumeSession({ sessionId: first.sessionId, cwd: here });
+    assert.equal(bridge.sessions.get(first.sessionId).provider, "openrouter");
+    assert.equal(bridge.sessions.get(first.sessionId).model, "vendor/coder");
+    process.env.UNREAL_HARNESS_LLM_PROVIDER = "openrouter";
+    const overridden = await bridge.newSession({ cwd: here });
+    assert.equal(bridge.sessions.get(overridden.sessionId).provider, "openrouter");
+    assert.notEqual(bridge.sessions.get(overridden.sessionId).model, "gpt-6-luna");
+  } finally {
+    if (previousProvider === undefined) delete process.env.UNREAL_HARNESS_LLM_PROVIDER;
+    else process.env.UNREAL_HARNESS_LLM_PROVIDER = previousProvider;
+    if (previousModel === undefined) delete process.env.UNREAL_HARNESS_LLM_MODEL;
+    else process.env.UNREAL_HARNESS_LLM_MODEL = previousModel;
+  }
 });
 
 test("pins favorite models above recommended ones in the model picker", async () => {

@@ -41,3 +41,7 @@ Enable the integration in Preferences, then check System Settings → Privacy & 
 ## It works on one Mac but not another
 
 The shipped binaries are for Apple Silicon and macOS 14+. Intel/Windows/Linux require separate porting/build work. Developer tools inside a project remain that project's prerequisites. No live provider request is part of the installer's health check: a ready backend does not prove billing or credentials are valid.
+
+## Built-in provider says Sign in required
+
+Neither connection includes credentials. For Claude Code, install the official CLI (https://code.claude.com/docs/en/setup), run `claude login` in Terminal, and refresh Claude Code in Settings. For Codex, install and run `codex login` in Terminal and refresh its status. Use the same macOS account as the app. A Codex login file being present does not prove its token is unexpired; renew it with Codex if requests fail. A local model connection instead requires its separate model server to be running.

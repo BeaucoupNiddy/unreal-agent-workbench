@@ -3,19 +3,37 @@
 import argparse, hashlib, json, os, plistlib, shutil, subprocess, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-VERSION='1.0.0'
+VERSION='1.0.1'
 def run(*args, **kwargs):
     subprocess.run([str(x) for x in args],check=True,**kwargs)
 def sha(file):
     with file.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+def signing_identity(requested):
+    """Pick a stable code-signing identity so macOS privacy grants (Calendar)
+    survive rebuilds. Ad-hoc ('-') signatures change on every build, which
+    silently invalidates grants that System Settings still shows as enabled."""
+    identity=requested or os.environ.get('CODESIGN_IDENTITY','')
+    if identity:return identity
+    try:listing=subprocess.check_output(['/usr/bin/security','find-identity','-v','-p','codesigning'],text=True)
+    except (OSError,subprocess.CalledProcessError):listing=''
+    for kind in ('Developer ID Application','Apple Development'):
+        for line in listing.splitlines():
+            if '"'+kind in line:return line.split('"')[1]
+    return '-'
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node',required=True,type=Path)
     parser.add_argument('--node-license',required=True,type=Path)
     parser.add_argument('--runner',required=True,type=Path)
     parser.add_argument('--runner-source',required=True,type=Path)
+    parser.add_argument('--sign-identity',help="Code-signing identity (default: $CODESIGN_IDENTITY, else first Developer ID Application/Apple Development identity, else ad-hoc '-')")
     parser.add_argument('--offline-deps',type=Path,help='Use an already locked, installed component tree instead of npm ci')
     args=parser.parse_args()
+    identity=signing_identity(args.sign_identity)
+    if identity=='-':print('warning: ad-hoc signing; users must re-grant Calendar access after every update.',file=sys.stderr)
+    else:
+        print('Signing with:',identity)
+        if identity.startswith('Apple Development'):print('note: this personal identity (including its Apple ID email) is embedded in the signature; pass --sign-identity - for public releases.',file=sys.stderr)
     if sys.platform!='darwin':parser.error('Build on macOS with Xcode Command Line Tools.')
     for binary in (args.node,args.runner):
         description=subprocess.check_output(['file','-b',str(binary.resolve())],text=True)
@@ -68,20 +86,23 @@ def main():
     shutil.copy2(ROOT/'THIRD_PARTY_NOTICES.md',resources/'THIRD_PARTY_NOTICES.md')
     run('/usr/bin/xcrun','swiftc','-O','-target','arm64-apple-macosx14.0','-module-cache-path',build/'swift-cache','-framework','AppKit','-framework','Security',ROOT/'packaging/Launcher.swift','-o',macos/'UnrealAgent')
     run('/usr/bin/xcrun','swiftc','-O','-target','arm64-apple-macosx14.0','-module-cache-path',build/'swift-cache','-framework','AppKit','-framework','EventKit',resources/'source/apple-productivity-mcp/calendar-helper/CalendarHelper.swift','-o',macos/'UnrealAgentCalendar')
-    info={'CFBundleExecutable':'UnrealAgent','CFBundleIdentifier':'local.unreal-agent','CFBundleName':'Unreal Agent','CFBundleDisplayName':'Unreal Agent','CFBundlePackageType':'APPL','CFBundleShortVersionString':VERSION,'CFBundleVersion':'1','LSMinimumSystemVersion':'14.0','LSUIElement':True,'NSCalendarsFullAccessUsageDescription':'Read and update Calendar events when you ask Unreal Agent.','NSCalendarsUsageDescription':'Read and update Calendar events when you ask Unreal Agent.','NSAppleEventsUsageDescription':'Access Apple Notes only when you enable the integration and ask Unreal Agent to use it.'}
+    info={'CFBundleExecutable':'UnrealAgent','CFBundleIdentifier':'local.unreal-agent','CFBundleName':'Unreal Agent','CFBundleDisplayName':'Unreal Agent','CFBundlePackageType':'APPL','CFBundleShortVersionString':VERSION,'CFBundleVersion':'2','LSMinimumSystemVersion':'14.0','LSUIElement':True,'NSCalendarsFullAccessUsageDescription':'Read and update Calendar events when you ask Unreal Agent.','NSCalendarsUsageDescription':'Read and update Calendar events when you ask Unreal Agent.','NSAppleEventsUsageDescription':'Access Apple Notes only when you enable the integration and ask Unreal Agent to use it.'}
     with (contents/'Info.plist').open('wb') as out:plistlib.dump(info,out)
     provenance={'version':VERSION,'platform':'darwin-arm64','node':subprocess.check_output([str(args.node),'--version'],text=True).strip(),'nodeSHA256':sha(args.node),'runnerRevision':revision,'runnerSHA256':sha(args.runner),'dependencyMode':'offline-locked' if args.offline_deps else 'npm-ci','sourceSHA256':{str(p.relative_to(ROOT/'source')):sha(p) for p in sorted((ROOT/'source').rglob('*')) if p.is_file()}}
     (resources/'BUILD-INFO.json').write_text(json.dumps(provenance,indent=2)+'\n')
     # Discard inherited Finder/provenance metadata from this newly built tree.
     run('/usr/bin/xattr','-cr',bundle)
-    for file in [runtime/'node',runtime/'unreal-agent-runner',macos/'UnrealAgentCalendar',macos/'UnrealAgent']:
-        run('/usr/bin/codesign','--force','--sign','-',file)
+    for file in [runtime/'node',runtime/'unreal-agent-runner',macos/'UnrealAgent']:
+        run('/usr/bin/codesign','--force','--sign',identity,file)
+    # The Calendar helper becomes its own responsible process for privacy
+    # checks, so give it the app's identifier to match the app's Calendar grant.
+    run('/usr/bin/codesign','--force','--sign',identity,'--identifier','local.unreal-agent',macos/'UnrealAgentCalendar')
     provenance['inputNodeSHA256']=provenance.pop('nodeSHA256')
     provenance['inputRunnerSHA256']=provenance.pop('runnerSHA256')
     provenance['bundledNodeSHA256']=sha(runtime/'node')
     provenance['bundledRunnerSHA256']=sha(runtime/'unreal-agent-runner')
     (resources/'BUILD-INFO.json').write_text(json.dumps(provenance,indent=2)+'\n')
-    run('/usr/bin/codesign','--force','--sign','-',bundle)
+    run('/usr/bin/codesign','--force','--sign',identity,bundle)
     run('/usr/bin/codesign','--verify','--deep','--strict',bundle)
     release=ROOT/'releases';release.mkdir(exist_ok=True)
     name=f'Unreal-Agent-{VERSION}-macOS-arm64'

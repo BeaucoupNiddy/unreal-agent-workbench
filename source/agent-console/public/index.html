@@ -11,7 +11,7 @@
     <title>Unreal Agent</title>
     <link id="favicon" rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link id="manifest" rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=10" />
+    <link rel="stylesheet" href="/styles.css?v=12" />
   </head>
   <body data-theme="system" data-accent="lime" data-brand="default">
     <div class="app-shell">
@@ -131,9 +131,36 @@
         <div class="modal-actions"><button type="button" id="cancelDeleteChat">Cancel</button><button class="danger" id="confirmDeleteChat" type="button">Delete chat</button></div>
       </div>
     </dialog>
-    <dialog class="modal" id="preferencesDialog">
+    <dialog class="modal preferences-modal" id="preferencesDialog" aria-labelledby="preferencesTitle">
       <form method="dialog" class="modal-card preferences-card" id="preferencesForm">
-        <div class="modal-heading"><div><p>APPEARANCE</p><h2>Make it feel like yours</h2></div><button value="cancel" aria-label="Close">×</button></div>
+        <div class="modal-heading"><div><p>YOUR WORKSPACE</p><h2 id="preferencesTitle">Settings</h2></div><button type="button" id="closePreferences" aria-label="Close settings">×</button></div>
+        <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+          <button type="button" id="modelsTab" role="tab" aria-selected="true" aria-controls="modelsPanel" data-settings-tab="models">Providers &amp; models</button>
+          <button type="button" id="generalTab" role="tab" aria-selected="false" aria-controls="generalPanel" data-settings-tab="general" tabindex="-1">General</button>
+          <button type="button" id="capabilitiesTab" role="tab" aria-selected="false" aria-controls="capabilitiesPanel" data-settings-tab="capabilities" tabindex="-1">Capabilities</button>
+        </div>
+        <section class="settings-panel models-panel" id="modelsPanel" role="tabpanel" aria-labelledby="modelsTab">
+          <div class="settings-section-heading"><h3>Defaults for new chats</h3></div>
+          <div class="model-defaults">
+            <label>Default provider<select name="defaultProvider" aria-label="Default provider" disabled></select></label>
+            <label>Default model<select name="defaultModel" aria-label="Default model for new chats" disabled></select></label>
+          </div>
+          <p class="theme-hint" id="defaultModelHint">Existing chats keep their provider and model.</p>
+          <div class="settings-section-heading catalog-heading"><h3>Model catalog</h3><button type="button" class="add-local-provider" id="addLocalProvider">＋ Add local models</button></div>
+          <div class="provider-tabs" id="providerTabs" role="tablist" aria-label="Model providers"></div>
+          <div class="provider-catalog" id="providerCatalog" role="tabpanel" aria-label="Available models">
+            <div class="local-connection-summary" id="localConnectionSummary" hidden><span id="localConnectionAddress"></span><button type="button" id="editLocalProvider">Edit connection</button></div>
+            <div class="catalog-toolbar">
+              <label class="model-search"><span class="sr-only">Search available models</span><input type="search" id="modelSearch" placeholder="Search models by name or creator…" autocomplete="off" /></label>
+              <button type="button" class="catalog-refresh" id="refreshModels" disabled><span aria-hidden="true">↻</span> Refresh</button>
+            </div>
+            <div class="catalog-meta"><span id="modelCatalogCount"></span><span id="refreshModelsStatus" role="status" aria-live="polite">Loading providers…</span></div>
+            <p id="codexConnectionSummary" hidden><span id="codexConnectionStatus"></span> Install and run <code>codex login</code> in Terminal to connect. The bundled runner reads your existing Codex login; it cannot refresh expired tokens.</p>
+            <p id="claudeConnectionSummary" hidden><span id="claudeConnectionStatus"></span> Install Claude Code from <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener noreferrer">Anthropic</a>, then run <code>claude login</code> in Terminal. Refresh models to recheck sign-in. Claude Code runs as its own agent, not the bundled model runner.</p>
+            <div class="settings-model-list" id="settingsModelList" aria-label="Available models"><p class="catalog-empty">Loading model catalog…</p></div>
+          </div>
+        </section>
+        <section class="settings-panel" id="generalPanel" role="tabpanel" aria-labelledby="generalTab" hidden>
         <fieldset><legend>Theme</legend><div class="segmented theme-options"><label><input type="radio" name="theme" value="system" />System</label><label><input type="radio" name="theme" value="light" />Light</label><label><input type="radio" name="theme" value="dark" />Dark</label><label><input type="radio" name="theme" value="warm" />Warm</label></div><p class="theme-hint">System follows your Mac’s appearance automatically.</p></fieldset>
         <fieldset><legend>Accent</legend><div class="swatches"><label><input type="radio" name="accent" value="lime" /><i class="lime"></i>Lime</label><label><input type="radio" name="accent" value="blue" /><i class="blue"></i>Blue</label><label><input type="radio" name="accent" value="amber" /><i class="amber"></i>Amber</label></div></fieldset>
         <fieldset><legend>Identity</legend><label class="switch-row brand-switch"><span>Jambalaya Agent mode<small>Rename the assistant and season the interface with a warm, festive palette</small></span><input type="checkbox" name="jambalayaMode" /></label></fieldset>
@@ -143,17 +170,35 @@
           <label class="setting-select"><span>Memory model</span><select name="memoryModel" aria-label="Memory model"></select></label>
           <label class="switch-row"><span>Automatic chat titles<small>Name new chats after their first response</small></span><input type="checkbox" name="titleEnabled" /></label>
           <label class="setting-select"><span>Title model</span><select name="titleModel" aria-label="Title model"></select></label>
-          <p class="theme-hint">Memory stays project-scoped and is retrieved only when a chat needs prior context. One-off chats are excluded.</p>
+          <p class="theme-hint">Memory stays project-scoped and is retrieved only when a chat needs prior context. One-off chats are excluded. Local chats use their own model and server for titles and memory.</p>
         </fieldset>
+        </section>
+        <section class="settings-panel" id="capabilitiesPanel" role="tabpanel" aria-labelledby="capabilitiesTab" hidden>
         <fieldset><legend>Local capabilities</legend>
           <label class="switch-row"><span>Apple Notes<small>Search, read, and create notes after approval</small></span><input type="checkbox" name="appleNotes" /></label>
           <label class="switch-row"><span>Apple Calendar<small>Search and create events after approval</small></span><input type="checkbox" name="appleCalendar" /></label>
           <p class="theme-hint">Capabilities are lazy and apply to new chats. macOS asks for Automation access the first time one runs.</p>
         </fieldset>
+        </section>
         <div class="modal-actions"><button class="primary" id="savePreferences" value="default">Save preferences</button></div>
       </form>
     </dialog>
+    <dialog class="modal" id="localProviderDialog" aria-labelledby="localProviderTitle">
+      <form class="modal-card local-provider-form" id="localProviderForm">
+        <div class="modal-heading"><div><p>ON YOUR HARDWARE</p><h2 id="localProviderTitle">Add local models</h2></div><button type="button" id="closeLocalProvider" aria-label="Close local connection">×</button></div>
+        <label>Model tool<select name="localType" aria-label="Local model tool"></select></label>
+        <label>Connection name<input name="localName" aria-label="Connection name" maxlength="80" required autocomplete="off" /></label>
+        <label>Server address<input name="localBaseUrl" aria-label="Server address" type="url" required placeholder="http://127.0.0.1:8000/v1" autocomplete="off" /></label>
+        <label>API key <small id="localKeyHint">Optional, if your local server requires one</small><input name="localApiKey" aria-label="Local server API key" type="password" autocomplete="new-password" /></label>
+        <label class="local-clear-key" id="localClearKeyRow" hidden><input type="checkbox" name="localClearKey" />Clear the saved API key</label>
+        <label>Model IDs <small>Optional. Add one ID per line if your server does not list them.</small><textarea name="localModelIds" aria-label="Manual model IDs" rows="2" placeholder="qwen3:8b"></textarea></label>
+        <p class="modal-note">Start the server in your model app first. Downloads and model installation stay in that app.</p>
+        <div class="local-discovery"><button type="button" id="testLocalProvider">Find models</button><p id="localProviderStatus" role="status" aria-live="polite"></p></div>
+        <div class="local-discovered-models" id="localDiscoveredModels" hidden></div>
+        <div class="modal-actions"><button type="button" id="cancelLocalProvider">Cancel</button><button class="primary" type="submit" id="saveLocalProvider">Add connection</button></div>
+      </form>
+    </dialog>
     <div class="toast" id="toast" role="status" hidden></div>
-    <script type="module" src="/app.js?v=14"></script>
+    <script type="module" src="/app.js?v=18"></script>
   </body>
 </html>

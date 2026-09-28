@@ -12,4 +12,4 @@ Two per-user launchd services are registered on first launch: `local.unreal-agen
 
 User state is outside the app bundle in the locations listed in MIGRATION.md. App removal does not erase user data. The installer does not enable Tailscale, port forwarding, public hosting, or the development auto-updater. The local console has powerful workspace access; keep it bound to loopback. Origin validation protects browser requests, but this is not a multi-user remote hosting product.
 
-Known limitation: automatic title/project-memory generation uses Codex. First-run OpenRouter setup disables those features. The pinned upstream Codex adapter reads existing credentials and does not implement interactive login or refresh.
+Automatic title/project-memory generation uses the configured model connection when supported. First-run OpenRouter setup disables these optional features. The pinned upstream Codex adapter reads existing credentials and does not implement interactive login or refresh.

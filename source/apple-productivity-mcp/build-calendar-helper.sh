@@ -17,6 +17,18 @@ readonly executable_path="$executable_dir/UnrealAgentCalendar"
   -framework EventKit \
   "$script_dir/calendar-helper/CalendarHelper.swift" \
   -o "$executable_path"
-/usr/bin/codesign --force --deep --sign - "$app_dir"
+# Sign with a stable identity when one is available. Ad-hoc ("-") signatures
+# change on every rebuild, which silently invalidates the user's Calendar
+# permission even though System Settings still shows it as enabled.
+identity="${CODESIGN_IDENTITY:-}"
+if [[ -z "$identity" ]]; then
+  identity="$(/usr/bin/security find-identity -v -p codesigning 2>/dev/null \
+    | /usr/bin/awk -F'"' '/Developer ID Application|Apple Development/ { print $2; exit }')"
+fi
+identity="${identity:--}"
+if [[ "$identity" == "-" ]]; then
+  echo "warning: no signing identity found; using ad-hoc signing. Calendar access must be re-granted after each rebuild." >&2
+fi
+/usr/bin/codesign --force --deep --sign "$identity" "$app_dir"
 
 echo "$app_dir"

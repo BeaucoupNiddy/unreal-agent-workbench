@@ -6,9 +6,9 @@ A ready-to-install package for the Unreal Agent Console: the existing browser fr
 
 ## Install and launch
 
-1. Download `Unreal-Agent-1.0.0-macOS-arm64.pkg` and open it. Follow Apple's Installer to put **Unreal Agent.app** in `/Applications`.
+1. Download `Unreal-Agent-1.0.1-macOS-arm64.pkg` and open it. Follow Apple's Installer to put **Unreal Agent.app** in `/Applications`.
 2. Open **Unreal Agent** from Applications.
-3. On first launch, enter your own **OpenRouter API key** and model ID. Alternatively, select **Use existing Codex login** if you already have compatible credentials in `~/.codex/auth.json`.
+3. On first launch, enter your own **OpenRouter API key** and model ID, or choose an existing **Codex** login or **Claude Code** installation and login. You can also connect a local model server in Settings after setup.
 4. The console opens in your default browser. Add a project folder or create a one-off chat, select a model, and send a prompt.
 
 After setup, opening the app is a one-click launch. The backend starts at login; closing the browser leaves agent tasks running.
@@ -17,7 +17,7 @@ After setup, opening the app is a one-click launch. The backend starts at login;
 
 **Requirements:** Apple Silicon Mac (M1 or later), macOS 14 or later, internet for model requests, and your own working model account. Node, Python, npm, Go, Zed, and ChatGPT do not need to be installed to use the OpenRouter setup. The app bundles its runtime; project-specific tools such as Git or Python are only needed when your tasks use them.
 
-This first release is ad-hoc signed, **not Apple Developer ID signed or notarized**. macOS may block a downloaded installer/app until you explicitly approve it in **System Settings → Privacy & Security → Open Anyway**. You may need to approve both the installer and the app. No Gatekeeper settings need to be disabled. Intel Macs, Windows, and Linux are not supported by these binaries.
+This release is ad-hoc signed, **not Apple Developer ID signed or notarized**. macOS may block a downloaded installer/app until you explicitly approve it in **System Settings → Privacy & Security → Open Anyway**. You may need to approve both the installer and the app. No Gatekeeper settings need to be disabled. Intel Macs, Windows, and Linux are not supported by these binaries.
 
 ## Included
 
@@ -27,9 +27,9 @@ This first release is ad-hoc signed, **not Apple Developer ID signed or notarize
 - Optional Apple Notes and Calendar tools, initially off for a new installation. Enable them in Preferences and grant macOS access when asked.
 - Installer, ZIP installation kit, uninstall helper, checksums, build provenance, and third-party notices/licenses.
 
-Your own keys, sessions, notes, project paths, and local configuration are not included. Model usage is billed by your selected provider. The Codex credential reader in this pinned runner does not implement login or token refresh: expired credentials must be renewed outside this app. OpenRouter is the built-in setup route for a clean Mac.
+Your own keys, sessions, notes, project paths, and local configuration are not included. Model usage is billed by your selected provider. Claude Code and Codex are built-in connections but require separate local CLI installation/sign-in (`claude login` or `codex login`); neither account is supplied with the download. The pinned Codex runner cannot refresh expired credentials. OpenRouter is the built-in setup route for a clean Mac. Local models require a running compatible model server.
 
-Automatic titles and project-memory generation currently use the Codex provider. First-run OpenRouter setup disables those optional features; chat still works. If you have compatible Codex credentials, you can enable them in Preferences.
+Automatic titles and project-memory generation use the selected connection when supported. See the user guide for local model server requirements and connection setup.
 
 ## Documentation
 

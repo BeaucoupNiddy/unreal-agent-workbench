@@ -6,7 +6,7 @@ function quoteSandboxLiteral(value) {
   return `\"${String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}\"`;
 }
 
-export async function sandboxLaunch({ mode, runner, args, cwd, dataDir }) {
+export async function sandboxLaunch({ mode, runner, args, cwd, dataDir, extraWritable = [] }) {
   if (mode === "danger-full-access" || process.platform !== "darwin") {
     if (mode === "danger-full-access") return { command: runner, args };
     throw new Error("Workspace and read-only confinement currently require macOS sandbox-exec.");
@@ -17,8 +17,8 @@ export async function sandboxLaunch({ mode, runner, args, cwd, dataDir }) {
   ]);
   const caches = [path.join(homedir(), ".npm"), path.join(homedir(), ".cache"), path.join(homedir(), "Library", "Caches")];
   const writable = mode === "workspace-write"
-    ? [workspace, storage, temporary, ...caches]
-    : [storage, temporary, ...caches];
+    ? [workspace, storage, temporary, ...caches, ...extraWritable]
+    : [storage, temporary, ...caches, ...extraWritable];
   const text = [
     "(version 1)",
     "(allow default)",

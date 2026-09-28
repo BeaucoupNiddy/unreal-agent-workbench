@@ -18,4 +18,14 @@ New installations leave these integrations off. Enable the ones you want in Pref
 
 ## Optional background features
 
-Automatic title and project-memory generation currently use Codex. They are disabled by setup when you choose OpenRouter because an OpenRouter key alone does not authorize these Codex requests. You can enable them after providing compatible Codex credentials. These features make additional model requests.
+Automatic title and project-memory generation use the selected model connection when supported. First-run OpenRouter setup disables these optional features; enable them in Preferences if your model/account supports them. These features make additional model requests.
+
+## Claude Code connection (new chats)
+
+Claude Code and OpenAI Codex are listed automatically in Settings → Models on every installation; neither requires adding a custom connection in the app. Authentication is **not bundled**. To use Claude Code, install the official Claude Code CLI on this Mac (https://code.claude.com/docs/en/setup), run `claude login` in Terminal and sign in with your own Claude account. Return to Models and refresh the Claude Code connection. Select it as the default and start a new chat. Your Claude Code installation handles sign-in and account usage; Unreal Agent never imports its OAuth token. The CLI must be installed for the same macOS user running Unreal Agent. Claude Code chats use the CLI agent rather than the pinned Unreal model runner; Read-only disables CLI tools, Workspace confines writes via the macOS sandbox, and Full access is not supported. Claude Code's own tool permissions and transcript differ from Unreal's runner. Its session data is stored by Claude Code under your own home directory. Claude Code is not included in the download.
+
+For Codex, install/sign in to Codex separately using `codex login`. Settings reports whether a compatible local login exists. The pinned runner reads the local auth file directly; it cannot sign in or refresh expired tokens. Neither connection becomes signed in merely by installing Unreal Agent.
+
+## Local model servers (new chats)
+
+Open **Settings → Providers & models → Add local models**. Choose oMLX, Ollama, LM Studio, llama.cpp, vLLM, or a compatible OpenAI-style server and enter its API address. Use **Find models** or enter model IDs manually; you can then choose the connection as your default for new chats. Install, download models, and start the server separately. The server needs `/v1/models` and `/v1/responses` compatibility; agent tasks need a model capable of tool calling. Cached models can remain listed when a server is offline, but cannot be used until the server returns. Optional local API keys and connection settings are saved on this Mac in `~/Library/Application Support/Unreal Agent ACP/local-providers.json` with user-only access. Do not expose an unauthenticated local server to other networks.

@@ -33,6 +33,8 @@ For a development workspace, refresh the snapshot with `python3 distribution/pac
 
 ## Signing
 
+`build.py` signs with `--sign-identity`, else `$CODESIGN_IDENTITY`, else the first *Developer ID Application* or *Apple Development* identity in your keychain, and falls back to ad-hoc (`-`). Use a stable identity for any build you install yourself: an ad-hoc signature changes on every rebuild, which silently invalidates the Calendar privacy grant (System Settings still shows it enabled, but access is denied). An *Apple Development* signature embeds your Apple ID email, so pass `--sign-identity -` for public releases unless you use Developer ID. The same rule applies to `apple-productivity-mcp/build-calendar-helper.sh`.
+
 Ad-hoc signing verifies the app's internal code integrity but does not establish a trusted publisher. For a fully smooth public download experience, a maintainer must use their own Apple Developer ID Application/Installer identities, apply appropriate hardened-runtime signing, notarize the app/package with Apple, staple the ticket, and retest on a clean Mac. The supplied build does not claim notarization and never asks recipients to disable Gatekeeper.
 
 ## GitHub publication
@@ -43,4 +45,4 @@ Ad-hoc signing verifies the app's internal code integrity but does not establish
 python3 packaging/publish.py --owner BeaucoupNiddy --repo unreal-agent-workbench
 ```
 
-For future versions, update VERSION in build.py, update the release documentation and validation record, rebuild, and publish a reviewed new release. Reusing an existing published tag is refused. Repository visibility remains private unless the owner deliberately changes it in GitHub settings.
+For future versions, update VERSION in build.py, update the release documentation and validation record, rebuild, and publish a reviewed new release. Reusing an existing published tag is refused. The existing repository visibility is not changed by the publisher; review it in GitHub settings before uploading assets.

@@ -34,6 +34,8 @@ const state = {
   capabilities: { appleNotes: true, appleCalendar: true },
   generation: { memoryEnabled: true, memoryModel: "gpt-6-luna", titleEnabled: true, titleModel: "gpt-6-luna" },
   generationModels: [],
+  localPresets: [], editingLocalProvider: null, localProviderBusy: false,
+  modelProviders: [], catalogProvider: null, catalogLoading: false, refreshingModels: false, catalogError: "", modelSettingsReady: false, preferencesLoadId: 0,
   configReady: null, resolveConfigReady: null, configReadyTimeout: null,
   openActivityGroups: new Set(),
   openControl: null,
@@ -1041,19 +1043,130 @@ const handleSystemAppearanceChange = () => {
 };
 if (systemAppearance.addEventListener) systemAppearance.addEventListener("change", handleSystemAppearanceChange);
 else systemAppearance.addListener(handleSystemAppearanceChange);
+function selectedCatalogProvider() {
+  return state.modelProviders.find((provider) => provider.id === state.catalogProvider);
+}
+
+function renderDefaultModel(form, saved = "") {
+  const provider = state.modelProviders.find((item) => item.id === form.elements.defaultProvider.value);
+  const choices = [...(provider?.models || [])];
+  const missing = saved && !choices.some((model) => model.value === saved);
+  if (missing) choices.unshift({ value: saved, name: `${saved} (unavailable)` });
+  form.elements.defaultModel.replaceChildren(...[{ value: "", name: provider?.local ? "First available local model" : "Provider default" }, ...choices].map((model) => {
+    const option = document.createElement("option"); option.value = model.value; option.textContent = model.name; return option;
+  }));
+  form.elements.defaultModel.value = saved;
+  form.elements.defaultProvider.disabled = !state.modelSettingsReady;
+  form.elements.defaultModel.disabled = !state.modelSettingsReady;
+  $("#defaultModelHint").textContent = missing
+    ? "Your saved model is no longer listed. Choose another model, or new chats will use the provider default."
+    : provider?.local && !choices.length ? "Start the local server or add a model ID before starting a new chat." : "Existing chats keep their provider and model.";
+}
+
+function selectSettingsTab(name) {
+  document.querySelectorAll("[data-settings-tab]").forEach((tab) => {
+    const selected = tab.dataset.settingsTab === name;
+    tab.setAttribute("aria-selected", String(selected)); tab.tabIndex = selected ? 0 : -1;
+    document.getElementById(tab.getAttribute("aria-controls")).hidden = !selected;
+  });
+}
+
+function renderProviderTabs() {
+  const defaultProvider = $("#preferencesForm").elements.defaultProvider.value;
+  $("#providerTabs").replaceChildren(...state.modelProviders.map((provider) => {
+    const tab = document.createElement("button"); tab.type = "button"; tab.className = "provider-tab";
+    tab.id = `provider-${provider.id}`; tab.setAttribute("role", "tab"); tab.setAttribute("aria-controls", "providerCatalog");
+    tab.setAttribute("aria-selected", String(provider.id === state.catalogProvider)); tab.tabIndex = provider.id === state.catalogProvider ? 0 : -1;
+    const heading = document.createElement("span"); heading.className = "provider-tab-heading";
+    const name = document.createElement("strong"); name.textContent = provider.name;
+    heading.append(name);
+    if (provider.id === defaultProvider) {
+      const badge = document.createElement("span"); badge.className = "provider-default-badge"; badge.textContent = "Default"; heading.append(badge);
+    }
+    const detail = document.createElement("small"); detail.textContent = `${provider.models.length} models${provider.id === "claude-code" ? ` · ${provider.status === "connected" ? "Signed in" : "Sign in required"}` : provider.local ? provider.status === "offline" ? " · Offline" : " · Local" : ""}`;
+    tab.append(heading, detail); tab.title = provider.description;
+    tab.addEventListener("click", () => {
+      state.catalogProvider = provider.id; state.catalogError = ""; $("#modelSearch").value = "";
+      renderProviderTabs(); renderSettingsModels(); $("#settingsModelList").scrollTop = 0; document.getElementById(tab.id)?.focus();
+    });
+    return tab;
+  }));
+  const provider = selectedCatalogProvider();
+  if (provider) $("#providerCatalog").setAttribute("aria-labelledby", `provider-${provider.id}`);
+  document.getElementById(`provider-${state.catalogProvider}`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function renderSettingsModels() {
+  const form = $("#preferencesForm"), provider = selectedCatalogProvider();
+  const search = $("#modelSearch").value.trim().toLowerCase();
+  const models = (provider?.models || []).filter((model) => `${model.name} ${model.value} ${model.description || ""}`.toLowerCase().includes(search));
+  const list = $("#settingsModelList");
+  list.replaceChildren(...models.map((model) => {
+    const row = document.createElement("div"); row.className = "settings-model-row";
+    const copy = document.createElement("div"); copy.className = "settings-model-copy";
+    const name = document.createElement("strong"); name.textContent = model.name.replace(/^★\s+/, "").split(" · ")[0];
+    const id = document.createElement("span"); id.className = "settings-model-id"; id.textContent = model.value;
+    copy.append(name, id);
+    if (model.description) { const detail = document.createElement("small"); detail.textContent = model.description; copy.append(detail); }
+    const isDefault = form.elements.defaultProvider.value === provider.id && form.elements.defaultModel.value === model.value;
+    row.classList.toggle("is-default", isDefault);
+    const button = document.createElement("button"); button.type = "button"; button.className = "model-set-default";
+    button.textContent = isDefault ? "✓ Default" : "Use as default";
+    button.disabled = !state.modelSettingsReady || isDefault;
+    button.setAttribute("aria-label", isDefault ? `${name.textContent} is the default model` : `Use ${name.textContent} as the default model`);
+    button.addEventListener("click", () => {
+      form.elements.defaultProvider.value = provider.id;
+      renderDefaultModel(form, model.value); renderProviderTabs(); renderSettingsModels();
+    });
+    row.append(copy, button); return row;
+  }));
+  if (!models.length) {
+    const empty = document.createElement("p"); empty.className = "catalog-empty";
+    empty.textContent = state.catalogLoading ? "Loading model catalog…" : provider?.local && !provider.models.length ? provider.error || "No models are listed. Edit this connection to add model IDs." : provider ? "No models match your search." : "The model catalog could not be loaded. Reopen settings to try again.";
+    list.append(empty);
+  }
+  $("#localConnectionSummary").hidden = !provider?.local;
+  $("#localConnectionAddress").textContent = provider?.local ? provider.baseUrl : "";
+  $("#addLocalProvider").disabled = !state.modelSettingsReady;
+  $("#modelCatalogCount").textContent = provider ? search ? `${models.length} of ${provider.models.length} models` : `${provider.models.length} available models` : "";
+  syncRefreshModels();
+}
+
 async function openPreferences() {
-  const form = $("#preferencesForm");
+  if (ui.preferencesDialog.open) return;
+  const loadId = ++state.preferencesLoadId, form = $("#preferencesForm");
+  state.modelSettingsReady = false; state.catalogLoading = true; state.catalogError = "";
+  form.elements.defaultProvider.disabled = true; form.elements.defaultModel.disabled = true;
   form.elements.theme.value = state.prefs.theme; form.elements.accent.value = state.prefs.accent;
   form.elements.jambalayaMode.checked = state.prefs.jambalayaMode;
   form.elements.showThoughts.checked = state.prefs.showThoughts;
-  try {
-    const [capabilities, generation] = await Promise.all([
-      requestJson("/api/capabilities"), requestJson("/api/generation-settings")
-    ]);
-    state.capabilities = capabilities.settings || state.capabilities;
-    state.generation = generation.settings || state.generation;
-    state.generationModels = generation.models || [];
-  } catch (error) { showToast(error.message); }
+  $("#modelSearch").value = ""; $("#savePreferences").disabled = true;
+  selectSettingsTab("models"); renderSettingsModels(); ui.preferencesDialog.showModal();
+  const results = await Promise.allSettled([
+    requestJson("/api/capabilities"), requestJson("/api/generation-settings"),
+    requestJson("/api/default-model"), requestJson("/api/models")
+  ]);
+  if (loadId !== state.preferencesLoadId) return;
+  const [capabilities, generation, defaults, catalog] = results;
+  if (capabilities.status === "fulfilled") state.capabilities = capabilities.value.settings;
+  if (generation.status === "fulfilled") {
+    state.generation = generation.value.settings; state.generationModels = generation.value.models || [];
+  }
+  state.catalogLoading = false;
+  state.modelSettingsReady = defaults.status === "fulfilled" && catalog.status === "fulfilled";
+  if (catalog.status === "fulfilled") { state.modelProviders = catalog.value.providers; state.localPresets = catalog.value.localPresets || []; }
+  else state.catalogError = catalog.reason.message;
+  const preferred = defaults.status === "fulfilled" ? defaults.value.settings : {};
+  // Older installations stored only a model; infer its provider from the catalog.
+  const providerId = preferred.provider || state.modelProviders.find((provider) => provider.models.some((model) => model.value === preferred.model))?.id
+    || (catalog.status === "fulfilled" ? catalog.value.defaultProvider : null) || state.modelProviders[0]?.id;
+  form.elements.defaultProvider.replaceChildren(...state.modelProviders.map((provider) => {
+    const option = document.createElement("option"); option.value = provider.id; option.textContent = provider.name; return option;
+  }));
+  form.elements.defaultProvider.value = providerId || "";
+  state.catalogProvider = providerId;
+  renderDefaultModel(form, preferred.model || ""); renderProviderTabs(); renderSettingsModels();
+  $("#settingsModelList").scrollTop = 0;
   form.elements.appleNotes.checked = state.capabilities.appleNotes;
   form.elements.appleCalendar.checked = state.capabilities.appleCalendar;
   for (const name of ["memoryModel", "titleModel"]) {
@@ -1068,7 +1181,107 @@ async function openPreferences() {
   form.elements.titleEnabled.checked = state.generation.titleEnabled;
   form.elements.titleModel.value = state.generation.titleModel;
   syncGenerationControls(form);
-  ui.preferencesDialog.showModal();
+  $("#savePreferences").disabled = results.some((result) => result.status === "rejected");
+  const failed = results.find((result) => result.status === "rejected");
+  if (failed) showToast(failed.reason.message);
+}
+
+function syncRefreshModels() {
+  const button = $("#refreshModels"), status = $("#refreshModelsStatus"), provider = selectedCatalogProvider();
+  button.disabled = !provider || state.catalogLoading || state.refreshingModels;
+  button.hidden = provider?.source === "bundled" && !["claude-code", "openai-codex"].includes(provider?.id);
+  button.lastChild.textContent = state.refreshingModels ? " Refreshing…" : " Refresh";
+  $("#settingsModelList").setAttribute("aria-busy", String(state.catalogLoading || state.refreshingModels));
+  status.textContent = state.catalogLoading ? "Loading providers…" : state.refreshingModels ? "Updating catalog…" : state.catalogError
+    || provider?.error || (provider?.source === "local" ? "Local model server" : provider?.source === "bundled" ? (provider.status === "connected" ? (provider.id === "openai-codex" ? "Login file found" : "Signed in") : provider.status === "not-installed" ? "Install CLI to connect" : "Sign in required") : provider?.source === "fallback" ? "Built-in list · refresh to get the latest catalog" : provider?.updatedAt ? `Updated ${new Date(provider.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "");
+}
+
+async function refreshModelList() {
+  const provider = selectedCatalogProvider(); if (!provider || state.refreshingModels) return;
+  const loadId = state.preferencesLoadId;
+  state.refreshingModels = true; state.catalogError = ""; syncRefreshModels();
+  try {
+    const result = await requestJson("/api/models/refresh", { method: "POST", body: JSON.stringify({ provider: provider.id }) });
+    if (loadId !== state.preferencesLoadId) return;
+    state.modelProviders = result.providers;
+    const form = $("#preferencesForm"); renderDefaultModel(form, form.elements.defaultModel.value);
+    renderProviderTabs(); renderSettingsModels();
+    showToast(`${provider.name} model catalog refreshed`);
+  } catch (error) {
+    if (loadId === state.preferencesLoadId) { state.catalogError = error.message; showToast(error.message); }
+  }
+  finally { state.refreshingModels = false; syncRefreshModels(); }
+}
+
+function localConnectionInput() {
+  const form = $("#localProviderForm"), input = {
+    ...(state.editingLocalProvider ? { id: state.editingLocalProvider } : {}),
+    type: form.elements.localType.value, name: form.elements.localName.value,
+    baseUrl: form.elements.localBaseUrl.value,
+    manualModels: form.elements.localModelIds.value.split("\n").map((value) => value.trim()).filter(Boolean)
+  };
+  if (form.elements.localClearKey.checked) input.apiKey = "";
+  else if (form.elements.localApiKey.value || !state.editingLocalProvider) input.apiKey = form.elements.localApiKey.value;
+  return input;
+}
+
+function openLocalProvider(connection = null) {
+  const form = $("#localProviderForm"); form.reset(); state.editingLocalProvider = connection?.id || null;
+  form.elements.localType.replaceChildren(...state.localPresets.map((preset) => {
+    const option = document.createElement("option"); option.value = preset.id; option.textContent = preset.name; return option;
+  }));
+  const preset = state.localPresets.find((item) => item.id === connection?.type) || state.localPresets[0];
+  if (!preset) return showToast("Load the model catalog before adding a connection.");
+  form.elements.localType.value = preset.id;
+  form.elements.localName.value = connection?.name || preset.name;
+  form.elements.localBaseUrl.value = connection?.baseUrl || preset.baseUrl;
+  form.elements.localModelIds.value = (connection?.manualModels || []).map((model) => model.value).join("\n");
+  $("#localKeyHint").textContent = connection?.hasApiKey ? "A key is saved. Leave blank to keep it." : "Optional, if your local server requires one";
+  $("#localClearKeyRow").hidden = !connection?.hasApiKey;
+  $("#localProviderTitle").textContent = connection ? "Edit local connection" : "Add local models";
+  $("#saveLocalProvider").textContent = connection ? "Save connection" : "Add connection";
+  $("#localProviderStatus").textContent = ""; $("#localDiscoveredModels").hidden = true;
+  $("#localProviderDialog").showModal();
+}
+
+function setLocalProviderBusy(busy) {
+  state.localProviderBusy = busy;
+  $("#saveLocalProvider").disabled = busy; $("#testLocalProvider").disabled = busy;
+  $("#closeLocalProvider").disabled = busy; $("#cancelLocalProvider").disabled = busy;
+  for (const element of $("#localProviderForm").elements) if (element.matches("input, select, textarea")) element.disabled = busy;
+}
+
+async function testLocalProvider() {
+  const form = $("#localProviderForm"); if (!form.reportValidity() || state.localProviderBusy) return;
+  const input = localConnectionInput(); setLocalProviderBusy(true);
+  $("#localProviderStatus").textContent = "Finding models…"; $("#localDiscoveredModels").hidden = true;
+  try {
+    const result = await requestJson("/api/local-providers/test", { method: "POST", body: JSON.stringify(input) });
+    $("#localProviderStatus").textContent = result.models.length ? `Connected · ${result.models.length} models found` : "Connected. No models were listed; add model IDs manually.";
+    const preview = $("#localDiscoveredModels");
+    preview.replaceChildren(...result.models.map((model) => { const name = document.createElement("span"); name.textContent = model.name; return name; }));
+    preview.hidden = !result.models.length;
+  } catch (error) { $("#localProviderStatus").textContent = error.message; }
+  finally { setLocalProviderBusy(false); }
+}
+
+async function saveLocalConnection(event) {
+  event.preventDefault(); if (state.localProviderBusy) return;
+  const input = localConnectionInput(), form = $("#preferencesForm");
+  const defaultProvider = form.elements.defaultProvider.value, defaultModel = form.elements.defaultModel.value;
+  setLocalProviderBusy(true); $("#localProviderStatus").textContent = "Saving connection…";
+  try {
+    const result = await requestJson("/api/local-providers", { method: "POST", body: JSON.stringify(input) });
+    state.modelProviders = result.providers; state.localPresets = result.localPresets;
+    form.elements.defaultProvider.replaceChildren(...state.modelProviders.map((provider) => {
+      const option = document.createElement("option"); option.value = provider.id; option.textContent = provider.name; return option;
+    }));
+    form.elements.defaultProvider.value = defaultProvider;
+    state.catalogProvider = result.provider.id; state.catalogError = ""; $("#modelSearch").value = "";
+    renderDefaultModel(form, defaultModel); renderProviderTabs(); renderSettingsModels(); $("#settingsModelList").scrollTop = 0;
+    $("#localProviderDialog").close(); showToast(state.editingLocalProvider ? "Local connection saved" : "Local connection added. Choose a model to use it as your default.");
+  } catch (error) { $("#localProviderStatus").textContent = error.message; }
+  finally { setLocalProviderBusy(false); }
 }
 
 function syncGenerationControls(form = $("#preferencesForm")) {
@@ -1178,6 +1391,48 @@ $("#cancelDeleteProject").addEventListener("click", () => ui.deleteProjectDialog
 ui.deleteProjectDialog.addEventListener("close", () => { if (!state.deletingProject) state.pendingProjectId = null; });
 ui.deleteProjectDialog.addEventListener("cancel", (event) => { if (state.deletingProject) event.preventDefault(); });
 $("#openPreferences").addEventListener("click", () => { void openPreferences(); });
+$("#refreshModels").addEventListener("click", () => { void refreshModelList(); });
+$("#addLocalProvider").addEventListener("click", () => openLocalProvider());
+$("#editLocalProvider").addEventListener("click", () => openLocalProvider(selectedCatalogProvider()));
+$("#closeLocalProvider").addEventListener("click", () => $("#localProviderDialog").close());
+$("#cancelLocalProvider").addEventListener("click", () => $("#localProviderDialog").close());
+$("#localProviderDialog").addEventListener("close", () => {
+  $("#localProviderForm").elements.localApiKey.value = "";
+});
+$("#localProviderDialog").addEventListener("cancel", (event) => { if (state.localProviderBusy) event.preventDefault(); });
+$("#localProviderForm").elements.localType.addEventListener("change", (event) => {
+  const preset = state.localPresets.find((item) => item.id === event.target.value);
+  if (!preset) return;
+  const form = $("#localProviderForm"); form.elements.localName.value = preset.name; form.elements.localBaseUrl.value = preset.baseUrl;
+  $("#localProviderStatus").textContent = ""; $("#localDiscoveredModels").hidden = true;
+});
+$("#testLocalProvider").addEventListener("click", () => { void testLocalProvider(); });
+$("#localProviderForm").addEventListener("submit", saveLocalConnection);
+$("#closePreferences").addEventListener("click", () => ui.preferencesDialog.close());
+$("#modelSearch").addEventListener("input", () => { renderSettingsModels(); $("#settingsModelList").scrollTop = 0; });
+$("#preferencesForm").elements.defaultProvider.addEventListener("change", () => {
+  const form = $("#preferencesForm");
+  state.catalogProvider = form.elements.defaultProvider.value; $("#modelSearch").value = ""; state.catalogError = "";
+  renderDefaultModel(form); renderProviderTabs(); renderSettingsModels();
+  $("#settingsModelList").scrollTop = 0;
+});
+$("#preferencesForm").elements.defaultModel.addEventListener("change", () => {
+  const form = $("#preferencesForm");
+  renderDefaultModel(form, form.elements.defaultModel.value); renderSettingsModels();
+});
+document.querySelectorAll("[data-settings-tab]").forEach((tab) => {
+  tab.addEventListener("click", () => selectSettingsTab(tab.dataset.settingsTab));
+});
+for (const tablist of document.querySelectorAll(".settings-tabs, .provider-tabs")) {
+  tablist.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const tabs = [...tablist.querySelectorAll('[role="tab"]')], current = tabs.indexOf(event.target);
+    if (current < 0) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    const id = tabs[next].id; tabs[next].click(); document.getElementById(id)?.focus();
+  });
+}
 $("#preferencesForm").elements.memoryEnabled.addEventListener("change", () => syncGenerationControls());
 $("#preferencesForm").elements.titleEnabled.addEventListener("change", () => syncGenerationControls());
 $("#moreActions").addEventListener("click", async () => {
@@ -1190,6 +1445,7 @@ $("#moreActions").addEventListener("click", async () => {
 });
 $("#preferencesForm").addEventListener("submit", async (event) => {
   event.preventDefault(); const form = event.currentTarget; const saveButton = $("#savePreferences");
+  if (saveButton.disabled || !state.modelSettingsReady) return;
   saveButton.disabled = true; saveButton.textContent = "Saving…";
   state.prefs = {
     theme: form.elements.theme.value,
@@ -1201,11 +1457,12 @@ $("#preferencesForm").addEventListener("submit", async (event) => {
   const currentSession = state.sessions.find((item) => item.sessionId === state.currentId);
   if (currentSession) ui.composerContext.textContent = `${basename(currentSession.cwd)} · ${displayModel(currentSession.currentModel)}`;
   try {
-    const [capabilities, generation] = await Promise.all([
+    const [capabilities, , generation] = await Promise.all([
       requestJson("/api/capabilities", { method: "PUT", body: JSON.stringify({
         appleNotes: form.elements.appleNotes.checked,
         appleCalendar: form.elements.appleCalendar.checked
       }) }),
+      requestJson("/api/default-model", { method: "PUT", body: JSON.stringify({ provider: form.elements.defaultProvider.value, model: form.elements.defaultModel.value }) }),
       requestJson("/api/generation-settings", { method: "PUT", body: JSON.stringify({
         memoryEnabled: form.elements.memoryEnabled.checked,
         memoryModel: form.elements.memoryModel.value,

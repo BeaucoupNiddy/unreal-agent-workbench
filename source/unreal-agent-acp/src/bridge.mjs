@@ -7,9 +7,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { CapabilityBroker } from "./mcp.mjs";
+import { claudeExecutable, claudeArgs, claudeStatus, codexStatus } from "./claude-code.mjs";
 import { sandboxLaunch } from "./sandbox.mjs";
 import { snapshotWorkspace, workspaceDiff } from "./workspace.mjs";
 import { packageVersion } from "./version.mjs";
+import { modelProviders, normalizeModelSettings, resolveProviderSettings } from "./model-settings.mjs";
+import { isLocalProvider, readLocalProviders, localProviderCatalog, localProviderPresets, localRunnerEnvironment } from "./local-providers.mjs";
 
 const execFileAsync = promisify(execFile);
 const appData = path.join(homedir(), "Library", "Application Support", "Unreal Agent ACP");
@@ -26,7 +29,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const helperBin = path.join(packageRoot, "bin");
 const openRouterModelsUrl = "https://openrouter.ai/api/v1/models";
 const openRouterCatalogMaxAgeMs = 6 * 60 * 60 * 1000;
-const openRouterCatalogVersion = 2;
+const openRouterCatalogVersion = 3;
 const retainedRuntimeAgeMs = 30 * 24 * 60 * 60 * 1000;
 const maintenanceIntervalMs = 24 * 60 * 60 * 1000;
 
@@ -186,15 +189,28 @@ async function readOpenRouterKey() {
   }
 }
 
-async function resolveProviderConfig() {
-  const saved = await readHarnessChatSettings();
-  const provider = process.env.UNREAL_HARNESS_LLM_PROVIDER || saved.provider || "openai-codex";
-  const model = process.env.UNREAL_HARNESS_LLM_MODEL || saved.model || "gpt-6-astra";
-  return { provider, model };
+// Model chosen in Agent Console's settings for every new chat. Explicit
+// environment overrides still win; an unavailable choice is ignored.
+async function readDefaultModel(dataDir) {
+  const saved = await readJson(path.join(dataDir, "default-model.json"), {});
+  try { return normalizeModelSettings(saved); }
+  catch { return { provider: "", model: "" }; }
 }
+
+async function resolveProviderConfig(preferred = {}) {
+  const saved = await readHarnessChatSettings();
+  return resolveProviderSettings(saved, preferred);
+}
+
+const claudeModels = [
+  { value: "sonnet", name: "Claude Sonnet" },
+  { value: "opus", name: "Claude Opus" },
+  { value: "haiku", name: "Claude Haiku" }
+];
 
 const codexModels = [
   { value: "gpt-6-astra", name: "GPT-6 Astra" },
+  { value: "gpt-6-sol", name: "GPT-6 Sol" },
   { value: "gpt-6-luna", name: "GPT-6 Luna" },
   { value: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
   { value: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
@@ -213,6 +229,7 @@ const openRouterModelGroups = [
   ] },
   { group: "anthropic", name: "Anthropic", options: [
     { value: "anthropic/claude-opus-5.5", name: "Claude Opus 5.5" },
+    { value: "anthropic/claude-sonnet-5.5", name: "Claude Sonnet 5.5" },
     { value: "anthropic/claude-sonnet-5", name: "Claude Sonnet 5" },
     { value: "anthropic/claude-fable-5.1", name: "Claude Fable 5.1" }
   ] },
@@ -321,9 +338,9 @@ function openRouterCatalogOptions(session) {
 
 function modelOptions(session) {
   const favorites = session.favoriteModels || [];
-  const options = session.provider === "openrouter"
+  const options = isLocalProvider(session.provider) ? structuredClone(session.localModels || []) : session.provider === "openrouter"
     ? openRouterCatalogOptions(session)
-    : structuredClone(codexModels);
+    : structuredClone(session.provider === "claude-code" ? claudeModels : codexModels);
   if (!options.some((option) => option.value === session.model)) {
     options.push({ value: session.model, name: `Current custom: ${session.model}` });
   }
@@ -338,7 +355,7 @@ function configOptions(session) {
     {
       id: "model",
       name: "Model",
-      description: `Choose the model used for this Unreal Agent session through ${session.provider === "openrouter" ? "OpenRouter" : "OpenAI Codex"}.`,
+      description: `Choose the model used for this Unreal Agent session through ${session.localConnection?.name || (session.provider === "openrouter" ? "OpenRouter" : session.provider === "claude-code" ? "Claude Code" : "OpenAI Codex")}.`,
       category: "model",
       type: "select",
       currentValue: session.model,
@@ -460,6 +477,7 @@ export class UnrealAgentBridge {
     this.sessions = new Map();
     this.fetch = options.fetch || globalThis.fetch;
     this.openRouterCatalogPromise = null;
+    this.openRouterForcePromise = null;
     this.favoriteModelsCache = null;
     this.favoriteToggleQueue = Promise.resolve();
     this.capabilitySocket = path.join(tmpdir(), `ua-cap-${process.pid}.sock`);
@@ -525,11 +543,52 @@ export class UnrealAgentBridge {
     return this.openRouterCatalogPromise;
   }
 
-  async refreshOpenRouterModels() {
+  async providerCatalog({ refreshProvider } = {}) {
+    const locals = await readLocalProviders(this.dataDir);
+    if (refreshProvider && ![...modelProviders, ...locals].some((provider) => provider.id === refreshProvider)) throw new Error("Choose a valid provider.");
+    const [models, localCatalogs, claude, codex] = await Promise.all([
+      refreshProvider === "openrouter" ? this.forceRefreshOpenRouterModels() : this.loadOpenRouterModels(),
+      Promise.all(locals.map((connection) => localProviderCatalog(this.dataDir, connection, {
+        fetch: this.fetch, force: refreshProvider === connection.id
+      }))),
+      claudeStatus(),
+      codexStatus()
+    ]);
+    const cached = await readJson(this.openRouterCatalogPath(), null);
+    const preferred = await readDefaultModel(this.dataDir);
+    const configured = await resolveProviderConfig(preferred);
+    return {
+      defaultProvider: configured.provider,
+      localPresets: localProviderPresets,
+      providers: [...modelProviders.map((provider) => ({
+        ...provider,
+        models: provider.id === "openrouter" ? openRouterCatalogOptions({ openRouterModels: models }) : structuredClone(provider.id === "claude-code" ? claudeModels : codexModels),
+        ...(provider.id === "claude-code" ? { status: claude.status, description: `${provider.description}. ${claude.message}` } : {}),
+        ...(provider.id === "openai-codex" ? { status: codex.status, description: `${provider.description}. ${codex.message}` } : {}),
+        source: provider.id === "openrouter" ? (models.length ? "catalog" : "fallback") : "bundled",
+        updatedAt: provider.id === "openrouter" && models.length ? cached?.fetchedAt || null : null
+      })), ...localCatalogs]
+    };
+  }
+
+  // Manual refresh: bypasses the cache age and reports failures instead of
+  // silently falling back, then updates every live session's picker.
+  async forceRefreshOpenRouterModels() {
+    if (this.openRouterForcePromise) return this.openRouterForcePromise;
+    this.openRouterForcePromise = this.refreshOpenRouterModels({ force: true })
+      .finally(() => { this.openRouterForcePromise = null; });
+    const models = await this.openRouterForcePromise;
+    for (const active of this.sessions.values()) {
+      if (active.provider === "openrouter") active.openRouterModels = models;
+    }
+    return models;
+  }
+
+  async refreshOpenRouterModels({ force = false } = {}) {
     const cachePath = this.openRouterCatalogPath();
     const cached = await readJson(cachePath, null);
     const cachedModels = Array.isArray(cached?.models) ? cached.models : [];
-    if (cachedModels.length && cached.version === openRouterCatalogVersion && Date.now() - Number(cached.fetchedAt || 0) < openRouterCatalogMaxAgeMs) {
+    if (!force && cachedModels.length && cached.version === openRouterCatalogVersion && Date.now() - Number(cached.fetchedAt || 0) < openRouterCatalogMaxAgeMs) {
       return cachedModels;
     }
     try {
@@ -550,6 +609,7 @@ export class UnrealAgentBridge {
       await fs.rename(temporary, cachePath);
       return models;
     } catch (error) {
+      if (force) throw new Error(`Could not refresh the model list: ${error.message}`);
       if (cachedModels.length) return cachedModels;
       console.error("Unreal Agent ACP model catalog fallback:", error.message);
       return [];
@@ -571,7 +631,8 @@ export class UnrealAgentBridge {
 
   async newSession(params) {
     const cwd = await this.validateWorkspace(params.cwd);
-    const provider = await resolveProviderConfig();
+    const preferred = await readDefaultModel(this.dataDir);
+    const provider = await resolveProviderConfig(preferred);
     const session = {
       id: `unreal-${randomUUID()}`,
       cwd,
@@ -588,7 +649,18 @@ export class UnrealAgentBridge {
     if (session.provider === "openrouter") {
       session.openRouterModels = await this.loadOpenRouterModels();
     }
+    if (isLocalProvider(session.provider)) {
+      const connection = (await readLocalProviders(this.dataDir)).find((item) => item.id === session.provider);
+      if (!connection) throw new Error("Add this local connection in Settings before starting a chat.");
+      const catalog = await localProviderCatalog(this.dataDir, connection, { fetch: this.fetch });
+      session.localConnection = { id: connection.id, type: connection.type, name: connection.name, baseUrl: connection.baseUrl };
+      session.localModels = catalog.models;
+      session.model ||= catalog.defaultModel;
+      if (!session.model) throw new Error(`No models are available from ${connection.name}. Start its server or add a model ID in Settings.`);
+    }
     session.favoriteModels = await this.readFavoriteModels();
+    if (!process.env.UNREAL_HARNESS_LLM_MODEL && (!preferred.provider || preferred.provider === session.provider)
+      && preferred.model && modelOptions(session).some((option) => option.value === preferred.model)) session.model = preferred.model;
     this.sessions.set(session.id, session);
     await this.persistSession(session);
     return { sessionId: session.id, configOptions: configOptions(session) };
@@ -611,6 +683,12 @@ export class UnrealAgentBridge {
     };
     if (session.provider === "openrouter") {
       session.openRouterModels = await this.loadOpenRouterModels();
+    }
+    if (isLocalProvider(session.provider)) {
+      const connection = (await readLocalProviders(this.dataDir)).find((item) => item.id === session.provider);
+      if (connection && connection.baseUrl === session.localConnection?.baseUrl) {
+        session.localModels = (await localProviderCatalog(this.dataDir, connection, { fetch: this.fetch })).models;
+      }
     }
     session.favoriteModels = await this.readFavoriteModels();
     this.sessions.set(session.id, session);
@@ -656,6 +734,26 @@ export class UnrealAgentBridge {
       await this.updateModel(session, params.value);
     } else if (params.configId === "favorite_model") {
       await this.toggleFavoriteModel(session, params.value);
+    } else if (params.configId === "refresh_models") {
+      // Codex models are a fixed list, so there is nothing to download.
+      if (session.provider === "openrouter") {
+        if (params.value === "cached") {
+          const models = await this.loadOpenRouterModels();
+          for (const active of this.sessions.values()) if (active.provider === "openrouter") active.openRouterModels = models;
+        } else await this.forceRefreshOpenRouterModels();
+      }
+      if (isLocalProvider(session.provider)) {
+        const connection = (await readLocalProviders(this.dataDir)).find((item) => item.id === session.provider);
+        if (!connection) throw new Error("This local connection could not be found in Settings.");
+        // Existing chats retain their original endpoint after a connection is edited.
+        if (connection.baseUrl !== session.localConnection?.baseUrl) return { configOptions: configOptions(session) };
+        const catalog = await localProviderCatalog(this.dataDir, { ...connection, ...session.localConnection }, {
+          fetch: this.fetch, force: params.value !== "cached"
+        });
+        for (const active of this.sessions.values()) {
+          if (active.provider === session.provider && active.localConnection?.baseUrl === session.localConnection.baseUrl) active.localModels = catalog.models;
+        }
+      }
     } else if (params.configId === "usage") {
       if (!usageOptions(session.usage).some((item) => item.value === params.value)) {
         throw new Error("Unsupported usage selection.");
@@ -670,7 +768,7 @@ export class UnrealAgentBridge {
     } else {
       throw new Error(`Unknown configuration option: ${params.configId}`);
     }
-    if (params.configId !== "model" && params.configId !== "favorite_model") await this.persistSession(session);
+    if (!["model", "favorite_model", "refresh_models"].includes(params.configId)) await this.persistSession(session);
     return { configOptions: configOptions(session) };
   }
 
@@ -746,6 +844,7 @@ export class UnrealAgentBridge {
 
   async runPrompt(session, prompt, client, turn) {
     if (session.child && session.child.exitCode === null) throw new Error("This session is already running.");
+    if (session.provider === "claude-code") return this.runClaudePrompt(session, prompt, client, turn);
     session.activeClient = client;
     let before;
     try {
@@ -813,6 +912,18 @@ export class UnrealAgentBridge {
       UNREAL_AGENT_SESSION_ID: session.id,
       PATH: `${helperBin}:${process.env.PATH || ""}`
     };
+    if (isLocalProvider(session.provider)) {
+      const connection = (await readLocalProviders(this.dataDir)).find((item) => item.id === session.provider);
+      if (!session.localConnection) throw new Error("This chat has no local server address. Start a new chat from Settings.");
+      if (connection?.apiKey && connection.baseUrl !== session.localConnection.baseUrl
+        && !process.env.UNREAL_HARNESS_LLM_BASE_URL && !process.env.UNREAL_HARNESS_LLM_API_KEY) {
+        throw new Error("This local connection's address has changed. Start a new chat to use its updated connection settings.");
+      }
+      Object.assign(env, localRunnerEnvironment(session.localConnection, connection?.apiKey));
+    }
+    if (session.provider === "openai-codex" && (await codexStatus()).status !== "connected") {
+      throw new Error("Sign in with Codex in Terminal (codex login) before using this connection.");
+    }
     if (session.provider === "openrouter") {
       const key = await readOpenRouterKey();
       if (!key) throw new Error("Add your OpenRouter key in Harness Chat settings first.");
@@ -1010,6 +1121,47 @@ export class UnrealAgentBridge {
     }
   }
 
+  async runClaudePrompt(session, prompt, client, turn) {
+    const status = await claudeStatus();
+    if (status.status !== "connected") throw new Error(status.message);
+    if (session.permissionMode === "danger-full-access") {
+      throw new Error("Claude Code supports Workspace or Read-only permissions in Unreal Agent. Change Permissions to Workspace before continuing.");
+    }
+    const before = await snapshotWorkspace(session.cwd, session.workspaceSnapshot);
+    session.workspaceSnapshot = before;
+    const command = claudeExecutable();
+    const args = claudeArgs(session, prompt);
+    const launch = await sandboxLaunch({ mode: session.permissionMode, runner: command, args,
+      cwd: session.cwd, dataDir: this.dataDir, extraWritable: [path.join(homedir(), ".claude"), path.join(homedir(), ".claude.json")] });
+    const child = spawn(launch.command, launch.args, { cwd: session.cwd,
+      env: { ...process.env, PATH: `${helperBin}:${process.env.PATH || ""}` }, stdio: ["ignore", "pipe", "pipe"] });
+    session.child = child;
+    let output = "", error = "";
+    child.stdout.on("data", (part) => { output += part.toString(); if (output.length > 20_000_000) child.kill(); });
+    child.stderr.on("data", (part) => { error = (error + part.toString()).slice(-4000); });
+    try {
+      const code = await new Promise((resolve, reject) => { child.on("error", reject); child.on("close", resolve); });
+      if (turn?.cancelled || session.cancelled) { session.cancelled = false; return { stopReason: "cancelled" }; }
+      if (turn?.interruptRequested) return { stopReason: "steered" };
+      if (code !== 0) throw new Error(error.trim() || `Claude Code exited with status ${code}. Sign in using claude login in Terminal.`);
+      let result;
+      try { result = JSON.parse(output); } catch { throw new Error("Claude Code returned an invalid response."); }
+      if (result.is_error) throw new Error(String(result.result || "Claude Code request failed."));
+      session.claudeStarted = true;
+      await this.persistSession(session);
+      if (result.result) await client.notify(acp.methods.client.session.update, { sessionId: session.id,
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: result.result } } });
+      const after = await snapshotWorkspace(session.cwd, before);
+      session.workspaceSnapshot = after;
+      const changes = workspaceDiff(before, after);
+      if (changes.length) await client.notify(acp.methods.client.session.update, { sessionId: session.id,
+        update: { sessionUpdate: "tool_call", toolCallId: `workspace-diff-${randomUUID()}`,
+          title: `${changes.length} files changed`, kind: "edit", status: "completed", content: changes,
+          locations: changes.map((change) => ({ path: change.path })) } });
+      return { stopReason: "end_turn" };
+    } finally { session.child = null; }
+  }
+
   interruptChild(child) {
     if (!child || child.exitCode !== null) return false;
     child.kill("SIGINT");
@@ -1058,6 +1210,8 @@ export class UnrealAgentBridge {
       cwd: session.cwd,
       provider: session.provider,
       model: session.model,
+      ...(session.claudeStarted ? { claudeStarted: true } : {}),
+      ...(session.localConnection ? { localConnection: session.localConnection, localModels: session.localModels } : {}),
       permissionMode: session.permissionMode,
       thoughtLevel: session.thoughtLevel,
       projectHistoryEnabled: session.projectHistoryEnabled !== false,

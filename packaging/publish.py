@@ -36,8 +36,9 @@ for name in ('source','packaging','docs','test'):
 for name in ('README.md','THIRD_PARTY_NOTICES.md'):shutil.copy2(ROOT/name,work/name)
 (work/'.gitignore').write_text('build/\nreleases/\n.publish/\n**/node_modules/\n**/__pycache__/\n.DS_Store\n.env\n.env.*\n*.log\n')
 for command in (['git','add','.'],['git','diff','--cached','--check']):subprocess.run(command,cwd=work,check=True)
+version=json.loads((ROOT/'releases/BUILD-INFO.json').read_text())['version']
 changed=subprocess.run(['git','diff','--cached','--quiet'],cwd=work).returncode!=0
-if changed:subprocess.run(['git','commit','-m','Package Unreal Agent Console as a self-contained macOS app'],cwd=work,check=True)
+if changed:subprocess.run(['git','commit','-m',f'Release Unreal Agent {version} with local and Claude Code models'],cwd=work,check=True)
 # A normal push never force-replaces another branch's history.
 subprocess.run(['git','push','-u','origin','main'],cwd=work,check=True)
 version=json.loads((ROOT/'releases/BUILD-INFO.json').read_text())['version'];tag='v'+version
@@ -48,8 +49,10 @@ else:raise SystemExit('Release tag already exists; refusing to overwrite a publi
 notes=(ROOT/'docs/RELEASE_NOTES.md').read_text()
 release=api(route+'/releases','POST',{'tag_name':tag,'target_commitish':'main','name':f'Unreal Agent {version} — macOS Apple Silicon','body':notes,'draft':True,'prerelease':False})
 upload=release['upload_url'].split('{')[0]
-files=sorted((ROOT/'releases').glob('*'))
+files=[ROOT/'releases'/f'Unreal-Agent-{version}-macOS-arm64{ext}' for ext in ('.pkg','.zip')]
+files += [ROOT/'releases'/name for name in ('BUILD-INFO.json','SHA256SUMS.txt')]
 for file in files:
+    if not file.is_file():raise SystemExit(f'Missing release asset: {file.name}')
     if file.suffix not in ('.pkg','.zip','.json','.txt'):continue
     from urllib.parse import quote
     result=api(upload+'?name='+quote(file.name),'POST',raw=file.read_bytes())

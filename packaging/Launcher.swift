@@ -26,11 +26,11 @@ func runLauncher(_ args: [String]) throws {
 func setup() throws {
     let panel = NSAlert()
     panel.messageText = "Set up Unreal Agent"
-    panel.informativeText = "Connect your own model account. OpenRouter usage is billed to your OpenRouter account. The key is stored in your Mac’s Keychain. Existing Codex login requires a valid ~/.codex/auth.json file."
+    panel.informativeText = "Connect your own model account. OpenRouter usage is billed to your OpenRouter account. The key is stored in your Mac’s Keychain. Claude Code requires a separate Claude Code installation and `claude login` in Terminal. Codex requires an existing ~/.codex/auth.json login."
     panel.addButton(withTitle: "Save and launch"); panel.addButton(withTitle: "Cancel")
     let view = NSView(frame: NSRect(x:0,y:0,width:420,height:156))
     let provider = NSPopUpButton(frame:NSRect(x:0,y:122,width:420,height:28))
-    provider.addItems(withTitles:["OpenRouter API key", "Use existing Codex login"])
+    provider.addItems(withTitles:["OpenRouter API key", "Use existing Codex login", "Use Claude Code login"])
     let modelLabel = NSTextField(labelWithString:"Model ID (include the provider prefix for OpenRouter)")
     modelLabel.frame=NSRect(x:0,y:96,width:420,height:20)
     let model = NSTextField(frame:NSRect(x:0,y:68,width:420,height:24)); model.stringValue="openai/gpt-6-luna"
@@ -53,17 +53,20 @@ func setup() throws {
             let result=SecItemAdd(item as CFDictionary,nil)
             if result != errSecSuccess {throw failure("Could not store the key in Keychain (\(result)).")}
         } else if update != errSecSuccess {throw failure("Could not update the key in Keychain (\(update)).")}
-    } else {
+    } else if provider.indexOfSelectedItem == 1 {
         guard fm.fileExists(atPath:home.appendingPathComponent(".codex/auth.json").path) else {throw failure("No existing Codex login was found. Use OpenRouter or establish a compatible Codex login first.")}
         if modelID.hasPrefix("openai/") {modelID=String(modelID.dropFirst(7))}
+    } else {
+        if modelID == "openai/gpt-6-luna" {modelID="sonnet"}
+        // Sign-in is managed by Claude Code itself; no credentials are collected here.
     }
     var saved=(try? JSONSerialization.jsonObject(with:Data(contentsOf:settings))) as? [String:Any] ?? [:]
-    saved["provider"]=useRouter ? "openrouter":"openai-codex";saved["model"]=modelID
+    saved["provider"]=useRouter ? "openrouter" : provider.indexOfSelectedItem == 1 ? "openai-codex" : "claude-code";saved["model"]=modelID
     try writeJSON(saved,to:settings)
     // Current optional title/memory generator uses Codex; avoid authentication
     // failures for a new OpenRouter-only user. It can be enabled in Preferences.
     let generation=home.appendingPathComponent("Library/Application Support/Unreal Agent Console/generation-settings.json")
-    if useRouter {try writeJSON(["titleEnabled":false,"memoryEnabled":false,"titleModel":"gpt-6-luna","memoryModel":"gpt-6-luna"],to:generation)}
+    if provider.indexOfSelectedItem != 1 {try writeJSON(["titleEnabled":false,"memoryEnabled":false,"titleModel":"gpt-6-luna","memoryModel":"gpt-6-luna"],to:generation)}
     let mcp=home.appendingPathComponent("Library/Application Support/Unreal Agent Console/mcp-settings.json")
     if !fm.fileExists(atPath:mcp.path) {try writeJSON(["appleNotes":false,"appleCalendar":false],to:mcp)}
 }

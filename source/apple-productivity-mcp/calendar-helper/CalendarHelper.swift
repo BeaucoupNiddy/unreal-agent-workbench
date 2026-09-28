@@ -53,6 +53,77 @@ func boolValue(_ value: Any?) -> Bool {
     return false
 }
 
+// MARK: - Privacy (TCC) attribution
+//
+// When this helper is exec'd directly by the MCP server, macOS attributes the
+// Calendar request to the "responsible" app that started the chain (for
+// example Zed), not to Unreal Agent. That app lacks
+// NSCalendarsFullAccessUsageDescription, so macOS silently denies access and
+// never shows a prompt, even when Unreal Agent itself has Full Access.
+// Re-spawning ourselves with responsibility disclaimed makes this bundle
+// (local.unreal-agent) the responsible process, while keeping stdin/stdout/
+// stderr connected so the MCP server still receives the JSON output.
+
+let disclaimedMarker = "UNREAL_CALENDAR_DISCLAIMED"
+var disclaimedChildPID: pid_t = 0
+
+typealias SetDisclaimFunction = @convention(c) (UnsafeMutablePointer<posix_spawnattr_t?>, Int32) -> Int32
+
+// The path of this running binary. Bundle.main.executablePath is not used
+// because in the packaged app the bundle's main executable is the launcher,
+// while this helper lives alongside it in Contents/MacOS.
+func currentExecutablePath() -> String? {
+    var size: UInt32 = 0
+    _ = _NSGetExecutablePath(nil, &size)
+    var buffer = [CChar](repeating: 0, count: Int(size) + 1)
+    guard _NSGetExecutablePath(&buffer, &size) == 0 else { return nil }
+    return URL(fileURLWithPath: String(cString: buffer)).resolvingSymlinksInPath().path
+}
+
+func runAsResponsibleProcessIfNeeded() {
+    if ProcessInfo.processInfo.environment[disclaimedMarker] == "1" { return }
+    guard let executable = currentExecutablePath(),
+          let handle = dlopen(nil, RTLD_NOW),
+          let symbol = dlsym(handle, "responsibility_spawnattrs_setdisclaim") else {
+        return // Fall back to running in-process.
+    }
+    let setDisclaim = unsafeBitCast(symbol, to: SetDisclaimFunction.self)
+
+    var attributes: posix_spawnattr_t?
+    guard posix_spawnattr_init(&attributes) == 0 else { return }
+    defer { posix_spawnattr_destroy(&attributes) }
+    guard setDisclaim(&attributes, 1) == 0 else { return }
+
+    var environment = ProcessInfo.processInfo.environment
+    environment[disclaimedMarker] = "1"
+    let arguments = [executable] + CommandLine.arguments.dropFirst()
+    var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
+    var envp: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+    defer {
+        argv.forEach { free($0) }
+        envp.forEach { free($0) }
+    }
+
+    var pid: pid_t = 0
+    guard posix_spawn(&pid, executable, nil, &attributes, &argv, &envp) == 0 else { return }
+    disclaimedChildPID = pid
+
+    // If the MCP server times out and terminates us, take the child down too.
+    for signalNumber in [SIGTERM, SIGINT, SIGHUP] {
+        signal(signalNumber) { received in
+            if disclaimedChildPID > 0 { kill(disclaimedChildPID, received) }
+            _exit(128 + received)
+        }
+    }
+
+    var status: Int32 = 0
+    while waitpid(pid, &status, 0) == -1 {
+        if errno != EINTR { exit(1) }
+    }
+    let signalled = status & 0x7f
+    exit(signalled == 0 ? (status >> 8) & 0xff : 128 + signalled)
+}
+
 func requestCalendarAccess(_ store: EKEventStore) throws {
     let status = EKEventStore.authorizationStatus(for: .event)
     if status == .fullAccess { return }
@@ -203,6 +274,8 @@ do {
     guard CommandLine.arguments.count >= 3 else {
         throw HelperError.invalidInput("Usage: UnrealAgentCalendar <action> <json>")
     }
+
+    runAsResponsibleProcessIfNeeded()
 
     let inputData = Data(CommandLine.arguments[2].utf8)
     let input = try JSONSerialization.jsonObject(with: inputData) as? [String: Any] ?? [:]

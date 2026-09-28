@@ -1,11 +1,11 @@
-# Verification record — 1.0.0
+# Verification record — 1.0.1
 
 Validation is performed on the Apple Silicon development Mac. This release has not been tested in a separate clean macOS account or VM and has not been notarized.
 
-Checks used for this release:
+Checks used for this release (1.0.1):
 
 - Installer tests: valid launchd XML with spaces/special characters; preserving other Hydra settings; refusing legacy service/agent conflicts without modifying files; fresh and same-location registration planning.
-- Component checks: Agent Console, ACP bridge, Apple Productivity MCP, and Harness Chat syntax/tests against the staged source and clean lockfile dependencies.
+- Component checks: Agent Console, ACP bridge (including local providers and Claude/Codex status), Apple Productivity MCP, and Harness Chat syntax/tests against the staged source and clean lockfile dependencies.
 - Build: native Swift compilation, pinned runner revision/architecture validation, bundled runtime execution, ad-hoc signature verification, package and ZIP creation.
 - Distribution checks: clean temporary HOME for front-end and Hydra HTTP smoke tests; archive integrity and installer payload inspection; scanning distributable first-party files for developer paths and credential patterns; SHA-256 release manifest.
 

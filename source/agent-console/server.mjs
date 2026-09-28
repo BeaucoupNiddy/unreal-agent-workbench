@@ -9,8 +9,11 @@ import { randomUUID } from "node:crypto";
 import { configuredMcpServers, readMcpSettings, saveMcpSettings } from "./mcp-settings.mjs";
 import { assertManagedHydra, hydraServiceLabel } from "./hydra-service.mjs";
 import { AutoTitleScheduler } from "./auto-title.mjs";
-import { BackgroundGenerator } from "./background-generation.mjs";
+import { BackgroundGenerator, readBackgroundConnection } from "./background-generation.mjs";
+import { readDefaultModel, saveDefaultModel } from "./default-model.mjs";
 import { generationModels, readGenerationSettings, saveGenerationSettings } from "./generation-settings.mjs";
+import { UnrealAgentBridge } from "../unreal-agent-acp/src/bridge.mjs";
+import { readLocalProviders, saveLocalProvider, normalizeLocalProvider, discoverLocalModels } from "../unreal-agent-acp/src/local-providers.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(root, "public");
@@ -26,12 +29,14 @@ const mcpSettingsFile = path.join(appDataDir, "mcp-settings.json");
 const generationSettingsFile = path.join(appDataDir, "generation-settings.json");
 const projectMemoryDir = path.join(appDataDir, "project-memories");
 const agentDataDir = path.join(homedir(), "Library", "Application Support", "Unreal Agent ACP");
+const defaultModelFile = path.join(agentDataDir, "default-model.json");
 const modelFavoritesFile = path.join(agentDataDir, "model-favorites.json");
 const hydraCli = path.join(root, "..", "hydra-gateway", "node_modules", ".bin", "hydra-acp");
 const appleMcpServer = path.join(root, "..", "apple-productivity-mcp", "server.mjs");
 const runner = process.env.UNREAL_AGENT_RUNNER || path.join(homedir(), ".local", "bin", "unreal-agent-runner");
 const execFileAsync = promisify(execFile);
 const bridges = new Map();
+const modelCatalog = new UnrealAgentBridge({ dataDir: agentDataDir });
 let hydraStart = null;
 let favoriteUpdate = Promise.resolve();
 const backgroundGenerator = new BackgroundGenerator({
@@ -40,6 +45,7 @@ const backgroundGenerator = new BackgroundGenerator({
   oneOffWorkspace: oneOffWorkspaceDir,
   runner,
   readSettings: () => readGenerationSettings(generationSettingsFile),
+  readConnection: (meta) => readBackgroundConnection(agentDataDir, meta.upstreamSessionId),
   updateTitle: async (sessionId, title) => {
   await hydraJson(`/v1/sessions/${encodeURIComponent(sessionId)}`, {
     method: "PATCH",
@@ -553,6 +559,53 @@ const server = createServer(async (req, res) => {
     if (req.method === "PUT" && url.pathname === "/api/capabilities") {
       const settings = await saveMcpSettings(mcpSettingsFile, await readJson(req));
       return json(res, 200, { settings, appliesTo: "new-chats" });
+    }
+    if (req.method === "GET" && url.pathname === "/api/default-model") {
+      return json(res, 200, { settings: await readDefaultModel(defaultModelFile), appliesTo: "new-chats" });
+    }
+    if (req.method === "GET" && url.pathname === "/api/models") {
+      return json(res, 200, await modelCatalog.providerCatalog());
+    }
+    if (req.method === "POST" && url.pathname === "/api/models/refresh") {
+      const body = await readJson(req);
+      if (typeof body.provider !== "string") return json(res, 400, { error: "Choose a valid provider." });
+      const catalog = await modelCatalog.providerCatalog({ refreshProvider: body.provider });
+      await Promise.allSettled([...bridges.values()].map(async (bridge) => {
+        const result = await bridge.connection.request("session/set_config_option", {
+          sessionId: bridge.sessionId, configId: "refresh_models", value: "cached"
+        }, 30_000);
+        if (result?.configOptions) {
+          bridge.configOptions = result.configOptions;
+          bridge.emit("hydra", { method: "session/update", params: { sessionId: bridge.sessionId,
+            update: { sessionUpdate: "config_option_update", configOptions: result.configOptions } } });
+        }
+      }));
+      return json(res, 200, catalog);
+    }
+    if (req.method === "POST" && url.pathname === "/api/local-providers/test") {
+      const body = await readJson(req);
+      const previous = body.id ? (await readLocalProviders(agentDataDir)).find((item) => item.id === body.id) : undefined;
+      if (body.id && !previous) return json(res, 400, { error: "This local connection no longer exists." });
+      try {
+        const connection = normalizeLocalProvider(body, previous);
+        return json(res, 200, { models: await discoverLocalModels(connection) });
+      } catch (error) { return json(res, 400, { error: error.message }); }
+    }
+    if (req.method === "POST" && url.pathname === "/api/local-providers") {
+      try {
+        const provider = await saveLocalProvider(agentDataDir, await readJson(req));
+        return json(res, 200, { provider, ...await modelCatalog.providerCatalog() });
+      } catch (error) { return json(res, 400, { error: error.message }); }
+    }
+    if (req.method === "PUT" && url.pathname === "/api/default-model") {
+      try {
+        const body = await readJson(req);
+        if (body.provider?.startsWith("local-") && !(await readLocalProviders(agentDataDir)).some((item) => item.id === body.provider)) {
+          return json(res, 400, { error: "Add this local connection before choosing it as the default." });
+        }
+        return json(res, 200, { settings: await saveDefaultModel(defaultModelFile, body), appliesTo: "new-chats" });
+      }
+      catch (error) { return json(res, 400, { error: error.message }); }
     }
     if (req.method === "GET" && url.pathname === "/api/generation-settings") {
       return json(res, 200, { settings: await readGenerationSettings(generationSettingsFile), models: generationModels });
