@@ -210,7 +210,9 @@ function findClosing(text, delimiter, start) {
     if (isEscaped(text, index)) { index += delimiter.length; continue; }
     const before = text[index - 1] || "";
     const after = text[index + delimiter.length] || "";
-    if (!before || /\s/.test(before) || (after && /\s/.test(after))) { index += delimiter.length; continue; }
+    // A closing marker needs text immediately before it; whitespace after it
+    // (as in "*Published* to GitHub") is perfectly valid Markdown.
+    if (!before || /\s/.test(before)) { index += delimiter.length; continue; }
     if ((delimiter === "_" || delimiter === "__") && /[\p{L}\p{N}]/u.test(before) && /[\p{L}\p{N}]/u.test(after)) {
       index += delimiter.length;
       continue;

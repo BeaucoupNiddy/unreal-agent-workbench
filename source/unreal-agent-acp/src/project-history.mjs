@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const maximumSessionsScanned = 80;
 const maximumHistoryBytes = 2 * 1024 * 1024;
@@ -24,7 +25,7 @@ function belongsToCurrentSession(meta, upstreamSessionId) {
   return Array.isArray(meta.upstreamGenerations) && meta.upstreamGenerations.some((item) => item?.upstreamSessionId === upstreamSessionId);
 }
 
-async function readTail(file, maximumBytes = maximumHistoryBytes) {
+export async function readHistoryTail(file, maximumBytes = maximumHistoryBytes) {
   const stat = await fs.stat(file);
   const length = Math.min(stat.size, maximumBytes);
   const handle = await fs.open(file, "r");
@@ -68,6 +69,7 @@ function scoreCandidate(title, transcript, terms, updatedAt) {
     const bodyHits = Math.min(8, bodyText.split(term).length - 1);
     return score + titleHits * 8 + bodyHits;
   }, 0);
+  if (terms.length && lexical === 0) return 0;
   const ageDays = Math.max(0, (Date.now() - updatedAt) / 86_400_000);
   return lexical + Math.max(0, 2 - ageDays / 30);
 }
@@ -88,7 +90,7 @@ async function generatedMemory(memoryRoot, sessionId) {
   if (!memoryRoot || !sessionId) return "";
   try {
     const record = JSON.parse(await fs.readFile(path.join(memoryRoot, `${sessionId}.json`), "utf8"));
-    return synopsisText(record.memory);
+    return { text: synopsisText(record.memory), transcriptSHA256: record.transcriptSHA256 };
   } catch { return ""; }
 }
 
@@ -121,16 +123,31 @@ export async function searchProjectHistory({ sessionRoot, memoryRoot, cwd, curre
   const candidates = [];
   for (const { directory, meta, metaTime } of eligible.sort((a, b) => b.metaTime - a.metaTime).slice(0, maximumSessionsScanned)) {
     let history = null;
-    let transcript = await generatedMemory(memoryRoot, meta.sessionId);
+    const memory = await generatedMemory(memoryRoot, meta.sessionId);
+    let transcript = memory?.text || "";
+    if (memory?.transcriptSHA256) {
+      try {
+        history = await readHistoryTail(path.join(directory, "history.jsonl"));
+        const original = transcriptFromHistory(history.text);
+        if (createHash("sha256").update(original.slice(-30_000)).digest("hex") !== memory.transcriptSHA256) transcript = original;
+      } catch { transcript = ""; }
+    }
     if (!transcript) transcript = synopsisText(meta.synopsis);
     if (!transcript) {
-      try { history = await readTail(path.join(directory, "history.jsonl")); } catch { continue; }
+      try { history = await readHistoryTail(path.join(directory, "history.jsonl")); } catch { continue; }
       transcript = transcriptFromHistory(history.text);
     }
     if (!transcript) continue;
     const title = String(meta.title || "Untitled chat").trim();
     const updatedAt = metaTime || history?.mtimeMs || 0;
-    const score = scoreCandidate(title, transcript, terms, updatedAt);
+    let score = scoreCandidate(title, transcript, terms, updatedAt);
+    if (terms.length && score < 1 && (!history || memory?.text === transcript)) {
+      try {
+        history = await readHistoryTail(path.join(directory, "history.jsonl"));
+        transcript = transcriptFromHistory(history.text);
+        score = scoreCandidate(title, transcript, terms, updatedAt);
+      } catch { /* No original-history match is available. */ }
+    }
     if (terms.length && score < 1) continue;
     candidates.push({ sessionId: meta.sessionId, title, updatedAt, score, transcript });
   }

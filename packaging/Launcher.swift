@@ -5,7 +5,8 @@ import Foundation
 let fm = FileManager.default
 let home = fm.homeDirectoryForCurrentUser
 let resources = Bundle.main.resourceURL!
-let settings = home.appendingPathComponent("Library/Application Support/Harness Chat/settings.json")
+let settings = home.appendingPathComponent("Library/Application Support/Unreal Agent ACP/provider-settings.json")
+let legacySettings = home.appendingPathComponent("Library/Application Support/Harness Chat/settings.json")
 func failure(_ message: String) -> NSError { NSError(domain: "Unreal Agent", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
 func writeJSON(_ object: [String: Any], to url: URL) throws {
     try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -22,6 +23,19 @@ func runLauncher(_ args: [String]) throws {
     let data = errors.fileHandleForReading.readDataToEndOfFile()
     task.waitUntilExit()
     if task.terminationStatus != 0 { throw failure(String(data: data, encoding: .utf8) ?? "Startup failed.") }
+}
+func migrateSettings() throws {
+    if !fm.fileExists(atPath: settings.path), fm.fileExists(atPath: legacySettings.path) {
+        let old = try JSONSerialization.jsonObject(with: Data(contentsOf: legacySettings)) as? [String: Any] ?? [:]
+        // Exclusive create avoids replacing another client's new settings.
+        try fm.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let temporary = settings.deletingLastPathComponent().appendingPathComponent("provider-settings.\(UUID().uuidString).tmp")
+        try writeJSON(["provider": old["provider"] ?? "openai-codex", "model": old["model"] ?? "gpt-6-astra"], to: temporary)
+        defer { try? fm.removeItem(at: temporary) }
+        if link(temporary.path, settings.path) != 0 && errno != EEXIST {
+            throw failure("Could not migrate account settings (\(errno)).")
+        }
+    }
 }
 func setup() throws {
     let panel = NSAlert()
@@ -46,7 +60,7 @@ func setup() throws {
     if useRouter {
         let value=key.stringValue.trimmingCharacters(in:.whitespacesAndNewlines)
         if value.isEmpty {throw failure("Enter your OpenRouter API key, then reopen the app.")}
-        let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"Harness Chat OpenRouter",kSecAttrAccount as String:NSUserName()]
+        let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"Unreal Agent OpenRouter",kSecAttrAccount as String:NSUserName()]
         let update=SecItemUpdate(query as CFDictionary,[kSecValueData as String:Data(value.utf8)] as CFDictionary)
         if update == errSecItemNotFound {
             var item=query;item[kSecValueData as String]=Data(value.utf8)
@@ -71,11 +85,23 @@ func setup() throws {
     if !fm.fileExists(atPath:mcp.path) {try writeJSON(["appleNotes":false,"appleCalendar":false],to:mcp)}
 }
 let app=NSApplication.shared
-app.setActivationPolicy(.accessory)
+app.setActivationPolicy(.regular)
+let window = AgentWindow()
+app.delegate = window
 do {
     try runLauncher(["--preflight"])
+    try migrateSettings()
     if !fm.fileExists(atPath:settings.path) || NSEvent.modifierFlags.contains(.option) {app.activate(ignoringOtherApps:true);try setup()}
-    try runLauncher([])
+    app.finishLaunching()
+    DispatchQueue.global(qos: .userInitiated).async {
+        do {
+            try runLauncher([])
+            DispatchQueue.main.async { window.showConsole() }
+        } catch {
+            DispatchQueue.main.async { window.showError(error) }
+        }
+    }
+    app.run()
 } catch {
     app.activate(ignoringOtherApps:true)
     let alert=NSAlert(error:error);alert.messageText="Unreal Agent could not start";alert.runModal();exit(1)

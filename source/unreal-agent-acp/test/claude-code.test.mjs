@@ -10,8 +10,13 @@ test('Claude Code is available without user-created connection and does not use 
 test('Claude invocation resumes and respects permissions', () => {
   const session = { id: 'unreal-12345678-1234-1234-1234-123456789012', model: 'sonnet', permissionMode: 'read-only' };
   assert.ok(claudeArgs(session, 'hello').includes('--tools'));
-  session.permissionMode = 'workspace-write';
-  assert.ok(claudeArgs(session, 'hello').includes('acceptEdits'));
+  assert.equal(claudeArgs(session, 'hello').includes('bypassPermissions'), false);
+  // Terminal commands need bypass in print mode; Seatbelt or the Full Access approval bounds them.
+  for (const mode of ['workspace-write', 'danger-full-access']) {
+    session.permissionMode = mode;
+    assert.ok(claudeArgs(session, 'hello').includes('bypassPermissions'));
+    assert.equal(claudeArgs(session, 'hello').includes('--tools'), false);
+  }
   session.claudeStarted = true;
   assert.ok(claudeArgs(session, 'next').includes('--resume'));
 });
@@ -28,4 +33,13 @@ test('Codex status detects login without exposing tokens', async () => {
   const result = await codexStatus(file);
   assert.equal(result.status, 'connected');
   assert.equal(JSON.stringify(result).includes('unit-test-secret'), false);
+});
+
+test('Claude failures preserve structured stdout details even on nonzero exit', async () => {
+  const { claudeResult } = await import('../src/claude-code.mjs');
+  assert.throws(() => claudeResult(JSON.stringify({ is_error: true, errors: ['Model access denied'] }), '', 1), /Model access denied/);
+  assert.throws(() => claudeResult(JSON.stringify({ is_error: true, result: 'Request failed' }), '', 0), /Request failed/);
+  assert.throws(() => claudeResult('', 'sandbox denied', 1), /sandbox denied/);
+  assert.throws(() => claudeResult('invalid', '', 0), /invalid response/);
+  assert.deepEqual(claudeResult('{"result":"hello"}', '', 0), { result: 'hello' });
 });

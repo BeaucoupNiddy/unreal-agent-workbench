@@ -51,8 +51,8 @@
 
         <footer class="composer-area">
           <form class="composer" id="composer">
-            <textarea id="prompt" rows="1" placeholder="Message Unreal Agent…" aria-label="Message Unreal Agent"></textarea>
-            <div class="composer-bottom"><span class="composer-hint"><kbd>↵</kbd> to send <span>·</span> <kbd>⇧ ↵</kbd> for a new line <span>·</span> send while working to choose Steer or Queue</span><button class="send-button" id="sendButton" type="submit" aria-label="Send message" title="Send message"><span>↑</span></button><button class="stop-button" id="stopButton" type="button" hidden><span>■</span> Stop</button></div>
+            <textarea id="prompt" rows="1" enterkeyhint="enter" placeholder="Message Unreal Agent…" aria-label="Message Unreal Agent"></textarea>
+            <div class="composer-bottom"><span class="composer-hint desktop-hint"><kbd>↵</kbd> to send <span>·</span> <kbd>⇧ ↵</kbd> for a new line <span>·</span> send while working to choose Steer or Queue</span><span class="composer-hint touch-hint">Return for a new line · tap ↑ to send</span><button class="hide-keyboard-button" id="hideKeyboard" type="button" hidden aria-label="Hide keyboard" title="Hide keyboard without sending"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="12" rx="2"/><path d="M7 7h.01M11 7h.01M15 7h.01M17 7h.01M7 10h.01M11 10h.01M15 10h.01M17 10h.01M8 12h8M9 19l3 3 3-3"/></svg></button><button class="send-button" id="sendButton" type="submit" aria-label="Send message" title="Send message"><span>↑</span></button><button class="stop-button" id="stopButton" type="button" hidden><span>■</span> Stop</button></div>
           </form>
           <p class="safety-note">Runs locally in your workspace <span>·</span> Review changes before using them</p>
         </footer>

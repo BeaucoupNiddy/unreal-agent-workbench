@@ -32,8 +32,9 @@ Uninstall preserves:
 - `~/.hydra-acp` (history and config)
 - `~/Library/Application Support/Unreal Agent ACP`
 - `~/Library/Application Support/Unreal Agent Console`
-- `~/Library/Application Support/Harness Chat`
-- The `Harness Chat OpenRouter` entry in Keychain
+- `~/Library/Application Support/Unreal Agent ACP/provider-settings.json` (shared provider settings)
+- `~/Library/Application Support/Harness Chat` (legacy, kept for rollback)
+- The `Unreal Agent OpenRouter` and legacy `Harness Chat OpenRouter` entries in Keychain
 
 If permanently retiring the app, manually remove those folders/Keychain entry only after backing up anything you need. `~/.hydra-acp` may be shared with other clients. The saved `agents.unreal` config can remain for a same-location reinstall; remove that one entry when moving to a different path.
 

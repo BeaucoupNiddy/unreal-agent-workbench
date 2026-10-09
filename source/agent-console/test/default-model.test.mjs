@@ -30,3 +30,12 @@ test("saves the default provider and its model together, and migrates model-only
   assert.deepEqual(await saveDefaultModel(file, { provider: "openai-codex", model: "" }), { provider: "openai-codex", model: "" });
   await assert.rejects(saveDefaultModel(file, { provider: "unsupported" }), /valid provider/);
 });
+
+test("changing the default model preserves the last reasoning effort", async () => {
+  const file = path.join(await mkdtemp(path.join(tmpdir(), "default-effort-")), "default-model.json");
+  await saveDefaultModel(file, { provider: "openai-codex", model: "gpt-6-astra", thoughtLevel: "xhigh" });
+  const saved = await saveDefaultModel(file, { provider: "openai-codex", model: "gpt-6-luna" });
+  assert.equal(saved.thoughtLevel, "xhigh");
+  assert.equal((await readDefaultModel(file)).thoughtLevel, "xhigh");
+  await assert.rejects(saveDefaultModel(file, { thoughtLevel: "invalid" }), /reasoning effort/);
+});

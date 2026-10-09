@@ -46,3 +46,25 @@ export function appendMessageChunk(entries, byMessage, { role, id, text = "", im
   appendImages(entry, images);
   return entry;
 }
+
+// Workspace diffs are synthetic tool calls emitted after the runner exits. By
+// then the final assistant message has already streamed, but the diff describes
+// work done before that reply. Other tool calls may also arrive after the last
+// assistant chunk (and before the diff); keep that trailing activity together
+// ahead of the reply, preserving the order of the tool calls on live and replay.
+export function appendToolCall(entries, entry) {
+  if (entry.kind === "edit" && String(entry.id || "").startsWith("workspace-diff-")) {
+    const lastUser = entries.findLastIndex((item) => item.type === "message" && item.role === "user");
+    const lastAgent = entries.findLastIndex((item) => item.type === "message" && item.role === "agent");
+    if (lastAgent > lastUser) {
+      const trailing = entries.slice(lastAgent + 1);
+      if (trailing.every((item) => item.type === "tool" || item.type === "thought")) {
+        entries.splice(lastAgent, entries.length - lastAgent, ...trailing, entry, entries[lastAgent]);
+      } else {
+        entries.splice(lastAgent, 0, entry);
+      }
+      return;
+    }
+  }
+  entries.push(entry);
+}

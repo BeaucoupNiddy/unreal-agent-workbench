@@ -13,6 +13,15 @@ test("renders inline markdown formatting and clickable links", () => {
   assert.match(html, /<a href="https:\/\/example\.org\/info" target="_blank" rel="noopener noreferrer">https:\/\/example\.org\/info<\/a>/);
 });
 
+test("renders emphasis when a closing marker is followed by whitespace or punctuation", () => {
+  const html = renderMarkdown("*Published Unreal Agent 1.0.1* to GitHub. **Release notes** are ready; _thanks_ again. ~~Old~~ new. Keep * spaced * literal.");
+  assert.match(html, /<em>Published Unreal Agent 1\.0\.1<\/em> to GitHub/);
+  assert.match(html, /<strong>Release notes<\/strong> are ready/);
+  assert.match(html, /<em>thanks<\/em> again/);
+  assert.match(html, /<del>Old<\/del> new/);
+  assert.match(html, /Keep \* spaced \* literal/);
+});
+
 test("renders common markdown blocks and fenced code", () => {
   const html = renderMarkdown("## Notes\n\n- first\n- **second**\n\n> A quoted line\n\n```js\nconst answer = '<safe>';\n```\n\n| Name | Value |\n| --- | ---: |\n| result | 42 |");
   assert.match(html, /<h2>Notes<\/h2>/);

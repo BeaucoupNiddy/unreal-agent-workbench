@@ -17,7 +17,8 @@ export async function readDefaultModel(file) {
 }
 
 export async function saveDefaultModel(file, value) {
-  const settings = normalizeDefaultModel(value);
+  const previous = await readDefaultModel(file);
+  const settings = normalizeDefaultModel({ ...previous, ...value });
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${process.pid}.tmp`;
   await fs.writeFile(temporary, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });

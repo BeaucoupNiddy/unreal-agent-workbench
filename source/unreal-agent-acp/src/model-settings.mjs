@@ -11,7 +11,9 @@ export function normalizeModelSettings(value = {}) {
   const model = typeof value?.model === "string" ? value.model.trim() : "";
   if (provider && !isLocalProvider(provider) && !modelProviders.some((item) => item.id === provider)) throw new Error("Choose a valid provider.");
   if (model.length > 200 || /[\u0000-\u001f]/.test(model)) throw new Error("Choose a valid model.");
-  return { provider, model };
+  const thoughtLevel = value?.thoughtLevel;
+  if (thoughtLevel !== undefined && !["low", "medium", "high", "xhigh", "max"].includes(thoughtLevel)) throw new Error("Choose a valid reasoning effort.");
+  return { provider, model, ...(thoughtLevel !== undefined ? { thoughtLevel } : {}) };
 }
 
 export function resolveProviderSettings(saved = {}, preferred = {}, env = process.env) {

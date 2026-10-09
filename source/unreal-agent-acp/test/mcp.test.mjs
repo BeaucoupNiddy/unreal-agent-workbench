@@ -82,7 +82,7 @@ test("forwards optional plans to Zed without a model tool schema", async () => {
   assert.equal(notifications[0].params.update.entries[1].priority, "high");
 });
 
-test("routes project history on demand and blocks it for one-off chats", async () => {
+test("routes project history on demand and blocks it for chats without a project", async () => {
   const projectHistoryRoot = await mkdtemp(path.join(tmpdir(), "ua-empty-history-"));
   const project = { id: "project-session", cwd: "/project", projectHistoryEnabled: true };
   const oneOff = { id: "one-off-session", cwd: "/one-off", projectHistoryEnabled: false };
@@ -91,7 +91,7 @@ test("routes project history on demand and blocks it for one-off chats", async (
     sessions: new Map([[project.id, project], [oneOff.id, oneOff]])
   });
   assert.equal(await broker.handle({ sessionId: project.id, action: "project_history", query: "prior decision" }), "No relevant chats were found in this project.");
-  await assert.rejects(broker.handle({ sessionId: oneOff.id, action: "project_history", query: "prior decision" }), /unavailable for one-off/);
+  await assert.rejects(broker.handle({ sessionId: oneOff.id, action: "project_history", query: "prior decision" }), /unavailable for chats without a project/);
 });
 
 test("compacts structured web results without duplicated payloads or broken JSON", () => {
@@ -199,4 +199,48 @@ test("rejects malformed socket requests without crashing the broker", async () =
   } finally {
     await broker.close();
   }
+});
+
+for (const reason of ['no clients attached to handle permission request', 'Hydra connection closed.', 'session/request_permission timed out.']) {
+  test(`approval transport failure is not reported as macOS denial: ${reason}`, async () => {
+    const broker = new CapabilityBroker({ socketPath: '/unused', sessions: new Map() });
+    let called = false;
+    broker.clientFor = () => { called = true; throw new Error('must not invoke tool'); };
+    const session = { id: 'approval-test', activeClient: { request: async () => { throw new Error(reason); } } };
+    await assert.rejects(broker.invokeTool(session, { name: 'apple-productivity' }, { name: 'calendar_list' }, {}), /tool has not run; this is not a macOS/);
+    assert.equal(called, false);
+    assert.equal(session.approvedCapabilities, undefined);
+  });
+}
+
+test('rejected approval still blocks tool execution', async () => {
+  const broker = new CapabilityBroker({ socketPath: '/unused', sessions: new Map() });
+  const session = { id: 'approval-test', activeClient: { request: async () => ({ outcome: { outcome: 'cancelled' } }) } };
+  await assert.rejects(broker.requestToolPermission(session, { name: 'apple-productivity' }, { name: 'calendar_create' }, {}), /not approved/);
+});
+
+test('explicit server discovery does not query unrelated servers, including a shared name prefix', async () => {
+  const session = { id: 'targeted', mcpServers: [{ name: 'git' }, { name: 'git-lab' }, { name: 'other' }] };
+  const broker = new CapabilityBroker({ sessions: new Map([[session.id, session]]) });
+  const listed = [];
+  const schema = { type: 'object', description: 'x'.repeat(5000) };
+  broker.clientFor = (_, server) => ({ tools: async () => { listed.push(server.name); return [{ name: 'issue', description: 'Find issues', inputSchema: schema }]; } });
+  const result = await broker.handle({ sessionId: session.id, action: 'list', query: 'git-lab' });
+  assert.deepEqual(listed, ['git-lab']);
+  assert.equal(result.length, 1); assert.equal(result[0].schemaAvailable, true); assert.equal(result[0].inputSchema, undefined);
+  const full = await broker.handle({ sessionId: session.id, action: 'schema', server: 'git-lab', tool: 'issue' });
+  assert.deepEqual(full.inputSchema, schema);
+});
+
+test('discovery is UTF-8 byte bounded and a failing server does not erase healthy results', async () => {
+  const session = { id: 'bounded', mcpServers: [{ name: 'broken' }, { name: 'healthy' }] };
+  const broker = new CapabilityBroker({ sessions: new Map([[session.id, session]]) });
+  broker.clientFor = (_, server) => ({ tools: async () => {
+    if (server.name === 'broken') throw new Error('server unavailable');
+    return Array.from({ length: 30 }, (_, i) => ({ name: `tool_${i}`, description: '測'.repeat(500), inputSchema: { type: 'object', description: '字'.repeat(1500) } }));
+  } });
+  const result = await broker.handle({ sessionId: session.id, action: 'list', query: '' });
+  assert.ok(result.length > 0 && result.length < 30);
+  assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 16_000);
+  assert.ok(result.every((tool) => tool.schemaAvailable === true));
 });

@@ -163,6 +163,9 @@ function transformEvent(event) {
       if (item.Type === "reasoning" && item.Data?.Summary?.length) {
         return [{ type: "reasoning", text: item.Data.Summary.join("\n") }];
       }
+      if (item.Type === "provider" && item.Data?.Display?.Kind === "reasoning" && item.Data.Display.Text) {
+        return [{ type: "reasoning", text: item.Data.Display.Text }];
+      }
       return [];
     });
   }

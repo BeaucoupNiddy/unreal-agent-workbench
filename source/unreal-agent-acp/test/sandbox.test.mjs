@@ -15,3 +15,16 @@ test("uses a session-local inline profile with the real workspace and temp direc
   assert.match(launch.profile, new RegExp((await realpath(tmpdir())).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(launch.profile, /Library\\?"?,? Caches|Library\/Caches/);
 });
+
+test("Claude sandbox permits only its user-specific /tmp directory", { skip: process.platform !== "darwin" }, async () => {
+  const { claudeWritablePaths } = await import("../src/claude-code.mjs");
+  const root = await mkdtemp(path.join(tmpdir(), "unreal-claude-sandbox-"));
+  for (const mode of ["workspace-write", "read-only"]) {
+    const launch = await sandboxLaunch({ mode, runner: "/bin/echo", args: [], cwd: root,
+      dataDir: path.join(root, "data"), extraWritable: claudeWritablePaths() });
+    assert.ok(launch.profile.includes(`(allow file-write* (subpath "/private/tmp/claude-${process.getuid()}"))`));
+    assert.ok(!launch.profile.includes('(subpath "/private/tmp")'));
+    assert.ok(!launch.profile.includes('(subpath "/tmp")'));
+    assert.ok(launch.profile.includes('(deny file-write*)'));
+  }
+});

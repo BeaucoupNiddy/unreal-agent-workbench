@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const request = JSON.parse(process.argv.at(-1));
+request.prompt ||= request.messages?.map((message) => message.content).join("\n");
 
 process.stdout.write(`${JSON.stringify({
   Kind: "model_response",

@@ -1,4 +1,6 @@
+import { setupKeyboardDismissal } from "./keyboard-dismissal.js";
 import { renderMarkdown } from "./markdown.js";
+import { copyMessage } from "./copy-message.js";
 
 const $ = (selector) => document.querySelector(selector);
 const STORAGE_KEY = "unreal-agent-chat-v1";
@@ -95,6 +97,26 @@ function createMessage(role, text = "", extraClass = "") {
   if (role === "assistant") content.innerHTML = renderMarkdown(text);
   else content.textContent = text;
   body.append(heading, content);
+  if ((role === "user" || role === "assistant") && text) {
+    const copy = document.createElement("button");
+    copy.type = "button"; copy.className = "message-copy";
+    copy.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="copy-glyph" x="8" y="8" width="12" height="12" rx="2"/><path class="copy-glyph" d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/><path class="copied-glyph" d="m5 12 4 4 10-10"/></svg>';
+    copy.title = "Copy message with formatting";
+    copy.setAttribute("aria-label", "Copy message with formatting");
+    copy.addEventListener("click", async () => {
+      try {
+        await copyMessage(text);
+        copy.classList.add("copied");
+        copy.title = "Message copied";
+        copy.setAttribute("aria-label", "Message copied");
+      } catch {
+        copy.classList.remove("copied");
+        copy.title = "Check clipboard access and try again";
+        copy.setAttribute("aria-label", "Copy failed. Check clipboard access and try again");
+      }
+    });
+    body.append(copy);
+  }
   wrapper.append(avatar, body);
   ui.messages.append(wrapper);
   return wrapper;
@@ -455,8 +477,11 @@ $("#browseFolder").addEventListener("click", browseFolder);
 ui.form.addEventListener("submit", saveSettings);
 ui.composer.addEventListener("submit", (event) => { event.preventDefault(); sendMessage(ui.prompt.value); });
 ui.prompt.addEventListener("input", resizePrompt);
+setupKeyboardDismissal(ui.prompt, $("#hideKeyboard"));
 ui.prompt.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); ui.composer.requestSubmit(); }
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
+    event.preventDefault(); ui.composer.requestSubmit();
+  }
 });
 ui.stop.addEventListener("click", stopRun);
 $("#mobileMenu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));

@@ -55,4 +55,34 @@ test("prefers a compact generated memory over raw chat history", async () => {
   const result = await searchProjectHistory({ sessionRoot: root, memoryRoot, cwd: "/project", query: "storage SQLite" });
   assert.match(result, /Selected SQLite/);
   assert.doesNotMatch(result, /Raw transcript marker/);
+  assert.equal(await searchProjectHistory({ sessionRoot: root, memoryRoot, cwd: "/project", query: "nonexistent zebra" }), "No relevant chats were found in this project.");
+  const original = await searchProjectHistory({ sessionRoot: root, memoryRoot, cwd: "/project", query: "Raw transcript marker" });
+  assert.match(original, /Raw transcript marker/);
+  await writeFile(path.join(memoryRoot, "memory-chat.json"), JSON.stringify({ transcriptSHA256: "stale", memory: { goal: "storage", outcome: "Outdated SQLite" } }));
+  const fresh = await searchProjectHistory({ sessionRoot: root, memoryRoot, cwd: "/project", query: "Raw transcript" });
+  assert.match(fresh, /Raw transcript marker/); assert.doesNotMatch(fresh, /Outdated SQLite/);
+});
+
+test('recency cannot turn zero keyword matches into a relevant chat', async (t) => {
+  const { rm } = await import('node:fs/promises');
+  const root = await mkdtemp(path.join(tmpdir(), 'ua-history-relevance-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const folder = path.join(root, 'recent'); await mkdir(folder);
+  await writeFile(path.join(folder, 'meta.json'), JSON.stringify({ agentId: 'unreal', sessionId: 'recent', cwd: '/project', title: 'Banana recipes', updatedAt: new Date().toISOString() }));
+  await writeFile(path.join(folder, 'history.jsonl'), event({ sessionUpdate: 'prompt_received', prompt: [{ type: 'text', text: 'Banana cake recipes' }] }));
+  assert.equal(await searchProjectHistory({ sessionRoot: root, cwd: '/project', query: 'postgres migrations' }), 'No relevant chats were found in this project.');
+  assert.match(await searchProjectHistory({ sessionRoot: root, cwd: '/project', query: 'banana recipes' }), /Banana cake/);
+});
+
+test('bounded history reads discard a partial first line without exposing reasoning or tool output', async (t) => {
+  const { rm } = await import('node:fs/promises');
+  const { readHistoryTail } = await import('../src/project-history.mjs');
+  const root = await mkdtemp(path.join(tmpdir(), 'ua-history-tail-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'history.jsonl');
+  const newest = event({ sessionUpdate: 'prompt_received', prompt: [{ type: 'text', text: 'Latest retained decision' }] });
+  await writeFile(file, event({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'private reasoning'.repeat(100) } }) + '\n' + newest + '\n');
+  const { text } = await readHistoryTail(file, Buffer.byteLength(newest) + 30);
+  assert.ok(Buffer.byteLength(text) <= Buffer.byteLength(newest) + 30);
+  assert.equal(transcriptFromHistory(text), 'User: Latest retained decision');
 });

@@ -1,0 +1,107 @@
+diff --git a/cmd/internal/agentrunner/run.go b/cmd/internal/agentrunner/run.go
+index d246484..ad746b0 100644
+--- a/cmd/internal/agentrunner/run.go
++++ b/cmd/internal/agentrunner/run.go
+@@ -160,6 +160,9 @@ func Run(
+ 	sessionDirectory := flags.String("session-directory", "", "directory containing session files; defaults to $XDG_STATE_HOME/unreal-agent/sessions, or $HOME/.local/state/unreal-agent/sessions")
+ 	workspaceDirectory := flags.String("workspace", ".", "agent workspace and Bash working directory")
+ 	logDirectory := flags.String("log-directory", "", "optional session JSONL log directory; unset writes only to stdout")
++	liveInput := flags.Bool("live-input", false, "accept JSONL user messages on stdin while the positional request runs")
++	fallbackSettings := flags.String("model-settings", "", "optional model settings JSON used only when built-in and user settings set no compaction threshold for the selected model")
++	liveReader, _ := input.(io.ReadCloser)
+ 	toolHeartbeatInterval := flags.Duration("tool-heartbeat-interval", 10*time.Minute, "tool-wait heartbeat interval (0 disables)")
+ 	if err := flags.Parse(args); err != nil {
+ 		if usageErr != nil {
+@@ -176,6 +179,17 @@ func Run(
+ 	if prompt != nil && flags.NArg() != 0 {
+ 		return errors.New("-p cannot be combined with a positional JSON request")
+ 	}
++	if *liveInput && (flags.NArg() != 1 || prompt != nil || liveReader == nil) {
++		return errors.New("-live-input requires a positional JSON request and a closeable stdin channel")
++	}
++	if *liveInput {
++		prepared, err := prepareLiveReader(input)
++		if err != nil {
++			return fmt.Errorf("open live input: %w", err)
++		}
++		liveReader = prepared
++		defer liveReader.Close()
++	}
+ 	if *toolHeartbeatInterval < 0 {
+ 		return errors.New("tool heartbeat interval must not be negative")
+ 	}
+@@ -279,11 +293,27 @@ func Run(
+ 		return fmt.Errorf("load model settings: %w", err)
+ 	}
+ 	selectedModel.CompactionThreshold = modelSettings.Model(selected.Name, selectedModel.ID).CompactionThreshold
++	if selectedModel.CompactionThreshold == 0 && *fallbackSettings != "" {
++		fallback, err := settings.Load(*fallbackSettings)
++		if err != nil {
++			return fmt.Errorf("load fallback model settings: %w", err)
++		}
++		selectedModel.CompactionThreshold = fallback.Model(selected.Name, selectedModel.ID).CompactionThreshold
++	}
+ 
+ 	storeDirectory, err := resolveSessionDirectory(*sessionDirectory, getenv)
+ 	if err != nil {
+ 		return fmt.Errorf("resolve session directory: %w", err)
+ 	}
++	if *liveInput {
++		lock, err := lockLiveSession(storeDirectory, parsed.SessionID)
++		if err != nil {
++			return err
++		}
++		if lock != nil {
++			defer lock.Close()
++		}
++	}
+ 	store, err := localfile.New(storeDirectory)
+ 	if err != nil {
+ 		return fmt.Errorf("open session store: %w", err)
+@@ -394,6 +424,19 @@ func Run(
+ 		} else {
+ 			messageID = inbox.ID(uuid.New().String())
+ 		}
++		if *liveInput && slices.Contains(restored.InputIDs, messageID) {
++			ack, err := json.Marshal(struct {
++				Type      string   `json:"type"`
++				MessageID inbox.ID `json:"message_id"`
++			}{"live_input_ack", messageID})
++			if err != nil {
++				return err
++			}
++			if _, err := fmt.Fprintf(observedOutput, "%s\n", ack); err != nil {
++				return err
++			}
++			continue
++		}
+ 		if err := inputs.Submit(runContext, inbox.Input{
+ 			ID: messageID, Kind: inbox.InputExternal, Payload: payload,
+ 		}); err != nil {
+@@ -440,7 +483,26 @@ func Run(
+ 		Tools:                 registry,
+ 		Operations:            operations,
+ 	})
++	var liveErrors chan error
++	if *liveInput {
++		liveErrors = make(chan error, 1)
++		go func() {
++			err := consumeLiveInputs(runContext, liveReader, inputs)
++			liveErrors <- err
++			if err != nil {
++				cancel()
++			}
++		}()
++	}
+ 	coordinatorErr := current.Run(runContext)
++	if *liveInput {
++		// Closing stdin unblocks Scanner before joining it, including on model errors.
++		cancel()
++		_ = liveReader.Close()
++		if err := <-liveErrors; err != nil && !errors.Is(err, context.Canceled) {
++			return fmt.Errorf("read live input: %w", err)
++		}
++	}
+ 	if observerErr := observer.Err(); observerErr != nil {
+ 		return observerErr
+ 	}

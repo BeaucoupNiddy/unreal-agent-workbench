@@ -15,7 +15,7 @@ test("a local default discovers its models, sends the local connection to the ru
   const workspace = await mkdtemp(path.join(tmpdir(), "local-bridge-workspace-"));
   const runner = fileURLToPath(new URL("./fixtures/local-model-runner.mjs", import.meta.url));
   await chmod(runner, 0o755);
-  const bridge = new UnrealAgentBridge({ dataDir, runner, fetch: async (url) => ({ ok: true, json: async () =>
+  const bridge = new UnrealAgentBridge({ dataDir, runner, codexCatalog: { load: async () => ({ models: [], source: "fallback", fetchedAt: 0 }) }, fetch: async (url) => ({ ok: true, json: async () =>
     url.includes("openrouter") ? { data: [{ id: "vendor/cloud" }] } : { data: [{ id: "local-alpha" }, { id: "local-beta" }] } }) });
   bridge.capabilityBroker = { server: {}, start: async () => {}, warm: () => {}, closeSession: () => {}, close: async () => {} };
   try {

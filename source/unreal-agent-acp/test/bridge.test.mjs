@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { acp, capabilityInstructions, contentBlocksToPrompt, createAgentApp, formatTokenCount, formatUsageCost, orderModelOptions, parseHarnessEvent, parseOpenRouterModelCatalog, UnrealAgentBridge } from "../src/bridge.mjs";
+import { acp, capabilityInstructions, openRouterCompactionSettings, contentBlocksToPrompt, createAgentApp, formatTokenCount, formatUsageCost, orderModelOptions, parseHarnessEvent, parseOpenRouterModelCatalog, promptWithImages, UnrealAgentBridge as ProductionBridge } from "../src/bridge.mjs";
+
+// Legacy bridge tests exercise the bundled fallback without touching the user's
+// real Codex account. Live discovery has its own isolated regression suite.
+class UnrealAgentBridge extends ProductionBridge {
+  constructor(options = {}) {
+    super({ codexCatalog: { load: async () => ({ models: [], source: "fallback", fetchedAt: 0 }) }, ...options });
+  }
+}
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -14,6 +22,41 @@ test("converts ACP text and resources into a harness prompt", () => {
     { type: "resource_link", name: "app.js", uri: "file:///tmp/app.js" },
     { type: "resource", resource: { uri: "file:///tmp/readme.md", text: "# Hello" } }
   ]), "Review this\n\n[Referenced resource: app.js]\nfile:///tmp/app.js\n\n[Attached context: file:///tmp/readme.md]\n# Hello");
+});
+
+test("writes attached images privately and points the model to ViewImage in content order", async () => {
+  const directory = path.join(await mkdtemp(path.join(tmpdir(), "unreal-vision-")), "attachments");
+  const png = Buffer.from("pixel bytes");
+  const prompt = await promptWithImages([
+    { type: "text", text: "What is in this screenshot?" },
+    { type: "image", mimeType: "image/png", data: png.toString("base64") },
+    { type: "text", text: "And the second image?" },
+    { type: "image", mimeType: "image/jpeg", data: Buffer.from("other pixels").toString("base64") }
+  ], directory);
+  const paths = [...prompt.matchAll(/\[Attached image: (.*?)\]/g)].map((match) => match[1]);
+  assert.equal(paths.length, 2);
+  assert.ok(prompt.indexOf("screenshot?") < prompt.indexOf(paths[0]));
+  assert.ok(prompt.indexOf(paths[0]) < prompt.indexOf("second image?"));
+  assert.ok(prompt.indexOf("second image?") < prompt.indexOf(paths[1]));
+  assert.match(prompt, /Use ViewImage with the exact path above/);
+  assert.equal(prompt.includes(png.toString("base64")), false);
+  assert.equal((await readFile(paths[0])).toString(), "pixel bytes");
+  assert.equal((await stat(paths[0])).mode & 0o777, 0o600);
+  assert.equal((await stat(directory)).mode & 0o777, 0o700);
+  assert.match(paths[1], /\.jpg$/);
+  assert.match(await promptWithImages([{ type: "image", mimeType: "image/png", data: png.toString("base64") }], directory), /ViewImage/);
+  assert.equal(await promptWithImages([{ type: "text", text: "hello" }], directory), "hello");
+});
+
+test("rejects invalid image blocks rather than silently discarding them", async () => {
+  const directory = path.join(await mkdtemp(path.join(tmpdir(), "unreal-vision-invalid-")), "attachments");
+  for (const block of [
+    { type: "image", mimeType: "image/svg+xml", data: "YQ==" },
+    { type: "image", mimeType: "image/png", data: "not base64!" },
+    { type: "image", mimeType: "image/png", data: "" },
+    { type: "image", mimeType: "image/png", data: Buffer.alloc(3 * 1024 * 1024 + 1).toString("base64") }
+  ]) await assert.rejects(promptWithImages([block], directory), /Invalid image|3 MB/);
+  await assert.rejects(promptWithImages(Array(5).fill({ type: "image", mimeType: "image/png", data: "YQ==" }), directory), /up to 4/);
 });
 
 test("adds concise web policy only when a web capability is present", () => {
@@ -58,6 +101,40 @@ test("maps harness responses and tool activity", () => {
     kind: "tool_update", id: "call-1", status: "completed", error: undefined,
     output: undefined, exitCode: undefined
   });
+});
+
+test("shows provider reasoning and hides compaction summaries", () => {
+  assert.deepEqual(parseHarnessEvent({ Kind: "model_response", Data: { TurnID: "t1", Response: { Output: [
+    { Type: "provider", Data: { Type: "reasoning", Raw: {}, Display: { Kind: "reasoning", Text: "Checking files" } } },
+    { Type: "provider", Data: { Type: "encrypted", Raw: {} } }
+  ] } } }), [{ kind: "message", role: "thought", text: "Checking files" }]);
+  const state = {};
+  const [note] = parseHarnessEvent({ Kind: "turn", Data: { ID: "t2", PreviousTurnID: "t1", Type: "compaction" } }, state);
+  assert.equal(note.role, "thought");
+  const summary = { Kind: "model_response", Data: { TurnID: "t2", Response: { Output: [{ Type: "message", Data: { Text: "Handoff summary" } }] } } };
+  assert.deepEqual(parseHarnessEvent(summary, state), []);
+  assert.deepEqual(parseHarnessEvent({ Kind: "turn", Data: { ID: "t3", PreviousTurnID: "t2", Type: "regular" } }, state), []);
+  assert.equal(parseHarnessEvent({ ...summary, Data: { ...summary.Data, TurnID: "t3" } }, state)[0].text, "Handoff summary");
+});
+
+test("gives OpenRouter models half their context as a compaction limit", () => {
+  const limit = (window) => openRouterCompactionSettings("vendor/model", window)?.providers.openrouter.models[0].compaction_threshold;
+  assert.equal(limit(200_000), 100_000);
+  assert.equal(limit(2_000_000), 500_000);
+  assert.equal(limit(32_768), undefined);
+  assert.equal(limit(undefined), undefined);
+  assert.equal(openRouterCompactionSettings("vendor/model", 200_000).providers.openrouter.info.id, "openrouter");
+});
+
+test("tool return waits for every operation in a call to finish", () => {
+  const event = { Kind: "tool_call_status", Data: { CallID: "multi", Status: { Error: "" }, Operations: [
+    { ID: "one", Status: "completed" }, { ID: "two", Status: "awaiting" }
+  ] } };
+  assert.equal(parseHarnessEvent(event)[0].status, "in_progress");
+  event.Data.Operations[1].Status = "completed";
+  assert.equal(parseHarnessEvent(event)[0].status, "completed");
+  event.Data.Operations[1].Status = "failed";
+  assert.equal(parseHarnessEvent(event)[0].status, "failed");
 });
 
 test("normalizes, sorts, and prioritizes the OpenRouter model catalog", () => {
@@ -267,6 +344,7 @@ test("provider catalogs can be browsed and refreshed without creating a chat", a
   } });
   const catalog = await bridge.providerCatalog();
   assert.deepEqual(catalog.providers.map((provider) => provider.id), ["openai-codex", "claude-code", "openrouter"]);
+  assert.ok(catalog.providers[0].models.some((model) => model.value === "gpt-6.1-sol" && model.name === "GPT-6.1 Sol"));
   assert.ok(catalog.providers[0].models.some((model) => model.value === "gpt-6-astra"));
   assert.ok(catalog.providers[0].models.some((model) => model.value === "gpt-6-sol"));
   assert.deepEqual(catalog.providers[2].models.map((model) => model.value), ["vendor/alpha"]);
@@ -464,7 +542,10 @@ test("runs a complete prompt and emits ACP updates", async () => {
     assert.equal(modelOption.category, "model");
     assert.equal(modelOption.currentValue, "gpt-6-astra");
     assert.ok(modelOption.options.every((option) => typeof option.value === "string"));
+    assert.ok(modelOption.options.some((option) => option.value === "gpt-6.1-sol"));
     assert.ok(modelOption.options.some((option) => option.value === "gpt-6-luna"));
+    const sol = await bridge.setConfigOption({ sessionId: created.sessionId, configId: "model", value: "gpt-6.1-sol" });
+    assert.equal(sol.configOptions.find((option) => option.id === "model").currentValue, "gpt-6.1-sol");
     const changed = await bridge.setConfigOption({ sessionId: created.sessionId, configId: "model", value: "gpt-5.6-luna" });
     assert.equal(changed.configOptions.find((option) => option.id === "model").currentValue, "gpt-5.6-luna");
     bridge.sessions.get(created.sessionId).permissionMode = "danger-full-access";
@@ -482,6 +563,25 @@ test("runs a complete prompt and emits ACP updates", async () => {
       "tool_call", "tool_call_update", "agent_message_chunk"
     ]);
     assert.equal(notifications.at(-1).content.text, "Mock received: hello");
+
+    // Exercise the ACP prompt boundary, not just the conversion helper. The
+    // runner receives a path (never base64) even for an image-only prompt.
+    const image = Buffer.from("screenshot data");
+    const imageResult = await bridge.prompt({ sessionId: created.sessionId, prompt: [
+      { type: "image", mimeType: "image/png", data: image.toString("base64") }
+    ] }, { notify: async (_method, params) => notifications.push(params.update) });
+    assert.equal(imageResult.stopReason, "end_turn");
+    const received = notifications.at(-1).content.text;
+    const imagePath = received.match(/\[Attached image: (.*?)\]/)?.[1];
+    assert.ok(imagePath);
+    assert.match(received, /Use ViewImage/);
+    assert.equal(received.includes(image.toString("base64")), false);
+    assert.deepEqual(await readFile(imagePath), image);
+
+    bridge.sessions.get(created.sessionId).provider = "claude-code";
+    await assert.rejects(bridge.prompt({ sessionId: created.sessionId,
+      prompt: [{ type: "image", mimeType: "image/png", data: image.toString("base64") }] },
+    { notify: async () => {} }), /not supported by the Claude Code connection/);
   } finally {
     if (previousProvider === undefined) delete process.env.UNREAL_HARNESS_LLM_PROVIDER;
     else process.env.UNREAL_HARNESS_LLM_PROVIDER = previousProvider;
@@ -535,7 +635,8 @@ test("steers an active task after allowing the current tool to finish", async ()
     ]);
     const requests = (await readFile(path.join(workspace, "requests.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
     assert.equal(requests[0].session_id, requests[1].session_id);
-    assert.deepEqual(requests[1].messages, [{
+    assert.match(requests[1].messages[0].message_id, /^[0-9a-f-]{36}$/);
+    assert.deepEqual(requests[1].messages.map(({ message_id, ...message }) => message), [{
       role: "user", content: "change direction: keep the existing implementation and add a regression test"
     }]);
     assert.match(await readFile(path.join(workspace, "interrupted.txt"), "utf8"), /resumed after tool boundary/);
@@ -576,6 +677,35 @@ test("supports Hydra's dedicated model-change request and persists it", async ()
     if (previousModel === undefined) delete process.env.UNREAL_HARNESS_LLM_MODEL;
     else process.env.UNREAL_HARNESS_LLM_MODEL = previousModel;
   }
+});
+
+test("preserves prompt failure messages on the ACP transport", async () => {
+  const client = acp.client({ name: "prompt-error-test" });
+  const connection = client.connect(createAgentApp({
+    prompt: async () => { throw new Error("Claude Code: model access denied"); }
+  }));
+  try {
+    await assert.rejects(connection.agent.request("session/prompt", {
+      sessionId: "test-session", prompt: [{ type: "text", text: "hello" }]
+    }), /Claude Code: model access denied/);
+  } finally { await connection.close(); }
+});
+
+test("advertises steering and answers _session/steering on the ACP transport used by Hydra", async () => {
+  const calls = [];
+  const client = acp.client({ name: "steering-test" });
+  const connection = client.connect(createAgentApp({
+    initialize: async () => ({ protocolVersion: 1, agentCapabilities: {}, _meta: { steering: { supported: true } } }),
+    steer: async (params) => { calls.push(params); return { outcome: "injected" }; }
+  }));
+  try {
+    const initialized = await connection.agent.request("initialize", { protocolVersion: 1 });
+    assert.equal(initialized._meta.steering.supported, true);
+    assert.deepEqual(await connection.agent.request("_session/steering", {
+      sessionId: "s", prompt: [{ type: "text", text: "change direction" }]
+    }), { outcome: "injected" });
+    assert.equal(calls[0].prompt[0].text, "change direction");
+  } finally { connection.close(); await connection.closed; }
 });
 
 test("registers session/set_model on the ACP transport used by Hydra", async () => {
@@ -631,12 +761,17 @@ test("reports deduplicated token and billed cost totals in ACP and the usage sel
     });
     const reports = notifications.filter((item) => item.sessionUpdate === "usage_update");
     assert.equal(reports.length, 2);
+    const recorded = bridge.sessions.get(created.sessionId).usage.events;
+    assert.equal(recorded.length, 2);
+    assert.equal(recorded[0].provider, "openai-codex");
+    assert.equal(recorded.reduce((sum, item) => sum + item.inputTokens, 0), 300);
+    assert.ok(recorded.every((item) => Number.isFinite(Date.parse(item.at))));
     assert.equal(reports.at(-1).cost.currency, "USD");
     assert.ok(Math.abs(reports.at(-1).cost.amount - 0.00323) < 1e-12);
     assert.deepEqual(reports.at(-1)._meta["unreal-agent/usage"], {
       inputTokens: 300, outputTokens: 50, cachedReadTokens: 190, cachedWriteTokens: 10
     });
-    assert.equal(reports.at(-1).used, 0); // Unknown context size is not fabricated.
+    assert.equal(reports.at(-1).used, 230); // Last response is reported even when context size is unknown.
     const updated = notifications.filter((item) => item.sessionUpdate === "config_option_update").at(-1);
     assert.match(usage(updated.configOptions).options[0].name, /^Cost \$0\.00 · Input 300 \(63% cached\).*Output 50/);
     assert.match(usage(updated.configOptions).options[2].name, /190 \(63% of input\).*10/);
@@ -647,6 +782,7 @@ test("reports deduplicated token and billed cost totals in ACP and the usage sel
     resumed.sessions.get(created.sessionId).permissionMode = "danger-full-access";
     const replay = await run(resumed);
     assert.equal(replay.usage, undefined);
+    assert.equal(resumed.sessions.get(created.sessionId).usage.events.length, 2);
     assert.equal(notifications.filter((item) => item.sessionUpdate === "usage_update").length, 2);
   } finally {
     if (provider === undefined) delete process.env.UNREAL_HARNESS_LLM_PROVIDER;

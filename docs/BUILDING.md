@@ -8,7 +8,7 @@ Use an Apple Silicon Mac with macOS 14+, Xcode Command Line Tools (`xcode-select
 
 ```sh
 git clone https://github.com/unreallabsai/unreal-agent.git /tmp/unreal-runner-source
-git -C /tmp/unreal-runner-source checkout 1b9f778453f411c029b39b85102aaefb95e7e48d
+git -C /tmp/unreal-runner-source checkout a5f3fd13032737142916523ae4344c392292f9d5
 cd /tmp/unreal-runner-source
 go mod download
 go build -trimpath -o /tmp/unreal-agent-runner ./cmd/unreal-agent-runner
@@ -25,7 +25,7 @@ python3 packaging/build.py \
   --runner-source /tmp/unreal-runner-source
 ```
 
-The build checks architecture and runner revision, copies only the source snapshot, installs dependencies from lockfiles with lifecycle scripts disabled, runs the four component check suites, compiles the launchers, includes third-party licenses, ad-hoc signs the app, and produces `releases/*.pkg`, `releases/*.zip`, `BUILD-INFO.json`, and `SHA256SUMS.txt`. It replaces only its own `build/` staging directory. npm/Go need network access during the first build; the resulting app needs no dependency downloads on install.
+The build checks architecture and runner revision, copies only the source snapshot, installs dependencies from lockfiles with lifecycle scripts disabled, runs the four component check suites, compiles a Dock-visible native WebKit window and generates its app icon, includes third-party licenses, ad-hoc signs the app, and produces `releases/*.pkg`, `releases/*.zip`, `BUILD-INFO.json`, and `SHA256SUMS.txt`. It replaces only its own `build/` staging directory. npm/Go need network access during the first build; the resulting app needs no dependency downloads on install.
 
 For a development workspace, refresh the snapshot with `python3 distribution/packaging/snapshot.py` before building. That script expects the parent workbench component directories and excludes node_modules, hidden files, generated output, and developer README files. The standalone published repository already contains the snapshot and does not need this step.
 

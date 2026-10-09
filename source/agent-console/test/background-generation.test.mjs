@@ -6,6 +6,43 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { saveLocalProvider } from "../../unreal-agent-acp/src/local-providers.mjs";
+import { readAuxiliaryUsage } from "../../unreal-agent-acp/src/auxiliary-usage.mjs";
+import { runBackgroundModel } from "../background-generation.mjs";
+import { fileURLToPath } from "node:url";
+
+test('background inference disables native tools, requests confinement and saves each usage response once', async () => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'background-ledger-'));
+  try {
+    let request;
+    await runBackgroundModel({ runner: fileURLToPath(new URL('../../unreal-agent-acp/test/fixtures/usage-runner.mjs', import.meta.url)),
+      workspace: root, model: 'test', systemPrompt: 'title', prompt: 'topic', usageDataDir: root, purpose: 'title', parentSessionId: 'chat',
+      confinement: async ({ mode, runner, args }) => { assert.equal(mode, 'read-only'); request = JSON.parse(args.at(-1)); return { command: runner, args }; } });
+    for (const name of ['Bash', 'ViewImage', 'SkillUse']) assert.ok(request.disallowed_tools.includes(name));
+    const events = await readAuxiliaryUsage(root);
+    assert.equal(events.length, 2);
+    assert.equal(events.reduce((total, event) => total + event.inputTokens + event.outputTokens, 0), 350);
+    assert.ok(events.every((event) => event.purpose === 'title' && event.parentSessionId === 'chat'));
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('overlapping and repeated background requests skip unchanged project memory', async () => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'background-coalesce-'));
+  let release;
+  try {
+    const directory = path.join(root, 'chat'); await fs.mkdir(directory);
+    await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify({ cwd: root }));
+    await fs.writeFile(path.join(directory, 'history.jsonl'), JSON.stringify({ params: { update: { sessionUpdate: 'prompt_received', prompt: [{ type: 'text', text: 'Keep the exact filename' }] } } }));
+    let calls = 0;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const generator = new BackgroundGenerator({ hydraSessionRoot: root, memoryRoot: path.join(root, 'memories'), oneOffWorkspace: '/unused',
+      readSettings: async () => ({ memoryEnabled: true, memoryModel: 'test' }), updateTitle: async () => {},
+      runModel: async () => { calls++; await gate; return '{"goal":"Keep filename","outcome":"Done"}'; } });
+    const first = generator.afterPrompt('chat');
+    const second = generator.afterPrompt('chat');
+    release(); await Promise.all([first, second]); await generator.afterPrompt('chat');
+    assert.equal(calls, 1);
+  } finally { release?.(); await fs.rm(root, { recursive: true, force: true }); }
+});
 
 test("extracts visible model output from runner events", () => {
   const event = { Kind: "model_response", Data: { Response: { Output: [
@@ -64,4 +101,48 @@ test("local titles and project memory use the chat's model and server instead of
     await fs.writeFile(metadata, JSON.stringify({ provider: "openrouter", model: "vendor/model" }));
     assert.equal(await readBackgroundConnection(dataDir, upstream), null);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test("a failed memory summary does not prevent a saved title or re-title on the next turn", async () => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), "title-memory-"));
+  const id = "hydra_session_test", cwd = path.join(root, "workspace"), titles = [];
+  try {
+    await fs.mkdir(path.join(root, id));
+    await fs.writeFile(path.join(root, id, "meta.json"), JSON.stringify({ cwd, title: "Raw first prompt" }));
+    await fs.writeFile(path.join(root, id, "history.jsonl"), JSON.stringify({ params: { update: { sessionUpdate: "prompt_received", prompt: [{ type: "text", text: "Raw first prompt" }] } } }));
+    const generator = new BackgroundGenerator({ hydraSessionRoot: root, memoryRoot: path.join(root, "memory"), oneOffWorkspace: path.join(root, "oneoff"),
+      readSettings: async () => ({ titleEnabled: true, memoryEnabled: true, titleModel: "test", memoryModel: "test" }),
+      updateTitle: async (_, title) => titles.push(title),
+      runModel: async ({ systemPrompt }) => { if (systemPrompt.includes("chat title")) return "Concise New Title"; throw new Error("memory quota exhausted"); }
+    });
+    const warn = console.warn;
+    console.warn = () => {};
+    try { assert.deepEqual(await generator.afterPrompt(id, { generateTitle: true }), { generated: 1 }); }
+    finally { console.warn = warn; }
+    assert.deepEqual(titles, ["Concise New Title"]);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test("empty generated titles fail so the scheduler can retry", async () => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), "empty-title-"));
+  const id = "hydra_session_test";
+  try {
+    await fs.mkdir(path.join(root, id));
+    await fs.writeFile(path.join(root, id, "meta.json"), JSON.stringify({ cwd: root }));
+    await fs.writeFile(path.join(root, id, "history.jsonl"), JSON.stringify({ params: { update: { sessionUpdate: "prompt_received", prompt: [{ type: "text", text: "Something" }] } } }));
+    const generator = new BackgroundGenerator({ hydraSessionRoot: root, memoryRoot: root, oneOffWorkspace: root,
+      readSettings: async () => ({ titleEnabled: true, memoryEnabled: false, titleModel: "test" }),
+      updateTitle: async () => assert.fail("should not save an empty title"), runModel: async () => "```" });
+    await assert.rejects(generator.afterPrompt(id, { generateTitle: true }), /empty title/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('shared steering completions schedule background work once and Stop does not schedule it', async () => {
+  const { shouldGenerateAfterPrompt } = await import('../background-generation.mjs');
+  const completed = { stopReason: 'end_turn' };
+  assert.equal(shouldGenerateAfterPrompt(completed, 2), false);
+  assert.equal(shouldGenerateAfterPrompt(completed, 1), false);
+  assert.equal(shouldGenerateAfterPrompt(completed, 0), true);
+  assert.equal(shouldGenerateAfterPrompt({ stopReason: 'cancelled' }, 0), false);
+  assert.equal(shouldGenerateAfterPrompt({ stopReason: 'steered' }, 0), false);
 });

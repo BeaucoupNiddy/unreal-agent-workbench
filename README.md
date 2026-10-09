@@ -1,17 +1,17 @@
 # Unreal Agent — macOS installer
 
-A ready-to-install package for the Unreal Agent Console: the existing browser front end, Hydra backend, ACP bridge, agent runner, and Apple integrations in one app bundle.
+A ready-to-install package for the Unreal Agent Console: the console front end, Hydra backend, ACP bridge, agent runner, and Apple integrations in one app bundle.
 
 **Download:** use the `.pkg` or `.zip` asset on this repository's **Releases** page. GitHub's green **Code → Download ZIP** contains build source, not a ready-built app.
 
 ## Install and launch
 
-1. Download `Unreal-Agent-1.0.1-macOS-arm64.pkg` and open it. Follow Apple's Installer to put **Unreal Agent.app** in `/Applications`.
+1. Download `Unreal-Agent-1.0.3-macOS-arm64.pkg` and open it. Follow Apple's Installer to put **Unreal Agent.app** in `/Applications`.
 2. Open **Unreal Agent** from Applications.
 3. On first launch, enter your own **OpenRouter API key** and model ID, or choose an existing **Codex** login or **Claude Code** installation and login. You can also connect a local model server in Settings after setup.
-4. The console opens in your default browser. Add a project folder or create a one-off chat, select a model, and send a prompt.
+4. The console opens in its own Dock-visible window. Add a project folder or start a new chat, select a model, and send a prompt.
 
-After setup, opening the app is a one-click launch. The backend starts at login; closing the browser leaves agent tasks running.
+After setup, opening the app is a one-click launch. The backend starts at login; closing the window leaves agent tasks running.
 
 **No administrator password option:** download and unzip the release `.zip`, then double-click `Install.command`. It installs the same app into `~/Applications`. Install only one copy.
 

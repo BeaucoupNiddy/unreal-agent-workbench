@@ -1,12 +1,13 @@
 import { promises as fs } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
+import { canonicalFolder } from "./folder-access.mjs";
 
 function quoteSandboxLiteral(value) {
   return `\"${String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}\"`;
 }
 
-export async function sandboxLaunch({ mode, runner, args, cwd, dataDir, extraWritable = [] }) {
+export async function sandboxLaunch({ mode, runner, args, cwd, dataDir, extraWritable = [], writableFolders = [] }) {
   if (mode === "danger-full-access" || process.platform !== "darwin") {
     if (mode === "danger-full-access") return { command: runner, args };
     throw new Error("Workspace and read-only confinement currently require macOS sandbox-exec.");
@@ -16,8 +17,12 @@ export async function sandboxLaunch({ mode, runner, args, cwd, dataDir, extraWri
     realpathOrResolved(cwd), realpathOrResolved(dataDir), realpathOrResolved(tmpdir())
   ]);
   const caches = [path.join(homedir(), ".npm"), path.join(homedir(), ".cache"), path.join(homedir(), "Library", "Caches")];
+  const granted = mode === "workspace-write" ? await Promise.all(writableFolders.map(async (folder) => {
+    if (await canonicalFolder(folder) !== folder) throw new Error("An approved folder changed. Start a new chat to approve the changed target.");
+    return folder;
+  })) : [];
   const writable = mode === "workspace-write"
-    ? [workspace, storage, temporary, ...caches, ...extraWritable]
+    ? [workspace, storage, temporary, ...caches, ...extraWritable, ...granted]
     : [storage, temporary, ...caches, ...extraWritable];
   const text = [
     "(version 1)",

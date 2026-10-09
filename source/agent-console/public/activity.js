@@ -43,8 +43,37 @@ export function groupTranscriptEntries(entries, showThoughts = true) {
     activity = null;
   };
 
-  for (let index = 0; index < entries.length; index += 1) {
+  // An agent message followed by another one before the user speaks again is an
+  // interim update; only the last message of a turn is the answer.
+  const interim = new Set();
+  let laterAnswer = false;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
+    if (entry.type !== "message") continue;
+    if (entry.role === "user") { laterAnswer = false; continue; }
+    if (entry.role === "agent") { if (laterAnswer) interim.add(entry); laterAnswer = true; }
+  }
+
+  let subagents = null;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = interim.has(entries[index]) ? { ...entries[index], interim: true } : entries[index];
+    // A delegate command is shown as its subagent card unless it failed first.
+    if (entry.type === "tool" && entry.delegation && entry.status !== "failed") continue;
+    if (entry.type === "swarm") {
+      flush();
+      subagents = { type: "subagents", id: `subagents-${entry.id}`, swarm: entry, entries: [] };
+      result.push(subagents);
+      continue;
+    }
+    if (entry.type === "subagent") {
+      flush();
+      // Swarm members join their swarm's card; other subagents never do.
+      if (subagents && Boolean(subagents.swarm) !== Boolean(entry.state.swarmId)) subagents = null;
+      if (!subagents) { subagents = { type: "subagents", id: `subagents-${entry.id}`, entries: [] }; result.push(subagents); }
+      subagents.entries.push(entry);
+      continue;
+    }
+    if (entry.type !== "thought" || showThoughts) subagents = null;
     if (entry.type === "thought" || entry.type === "tool") {
       if (entry.type === "thought" && !showThoughts) continue;
       if (!activity) activity = { type: "activity", id: `activity-${entry.id || index}`, entries: [] };

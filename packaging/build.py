@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build self-contained macOS app, .pkg, ZIP, SHA-256 manifest and provenance."""
-import argparse, hashlib, json, os, plistlib, shutil, subprocess, sys
+import argparse, fcntl, hashlib, json, os, plistlib, shutil, subprocess, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-VERSION='1.0.1'
+VERSION='1.0.3'
 def run(*args, **kwargs):
     subprocess.run([str(x) for x in args],check=True,**kwargs)
 def sha(file):
@@ -39,7 +39,7 @@ def main():
         description=subprocess.check_output(['file','-b',str(binary.resolve())],text=True)
         if 'arm64' not in description:parser.error('This release builder requires Apple Silicon binaries.')
     revision=subprocess.check_output(['git','-C',str(args.runner_source),'rev-parse','HEAD'],text=True).strip()
-    if revision!='1b9f778453f411c029b39b85102aaefb95e7e48d':parser.error('Runner source must match pinned revision 1b9f778453f411c029b39b85102aaefb95e7e48d.')
+    if revision!='a5f3fd13032737142916523ae4344c392292f9d5':parser.error('Runner source must match pinned revision a5f3fd13032737142916523ae4344c392292f9d5.')
     runner_info=subprocess.check_output(['go','version','-m',str(args.runner)],text=True)
     if 'vcs.revision='+revision not in runner_info or 'vcs.modified=true' in runner_info:parser.error('Runner binary does not match the clean pinned source revision.')
     build=ROOT/'build'
@@ -50,7 +50,13 @@ def main():
     shutil.copytree(ROOT/'source',resources/'source')
     runtime=resources/'runtime/bin';runtime.mkdir(parents=True)
     shutil.copy2(args.node.resolve(),runtime/'node');shutil.copy2(args.runner,runtime/'unreal-agent-runner')
-    env={**os.environ,'PATH':str(runtime)+':'+os.environ.get('PATH','')}
+    # Build the inbox transport as a separate companion; the official runner and
+    # supplied clean upstream checkout remain unmodified.
+    run(sys.executable,ROOT/'source/live-runner/build.py','--source',args.runner_source,
+        '--revision',revision,'--official-runner',args.runner,'--output',runtime/'unreal-agent-live-runner')
+    live_info=json.loads((runtime/'unreal-agent-live-runner.json').read_text())
+
+    env={**os.environ,'PATH':str(runtime)+':'+os.environ.get('PATH',''),'UNREAL_AGENT_RUNNER':str(runtime/'unreal-agent-runner'),'UNREAL_AGENT_LIVE_RUNNER':str(runtime/'unreal-agent-live-runner')}
     for component in ('hydra-gateway','unreal-agent-acp'):
         target=resources/'source'/component
         if args.offline_deps:
@@ -84,15 +90,19 @@ def main():
     if len(go_licenses)<5:raise RuntimeError('Go dependency licenses missing; run go mod download in the pinned runner source first.')
     for license_file in licenses.iterdir():license_file.chmod(0o644)
     shutil.copy2(ROOT/'THIRD_PARTY_NOTICES.md',resources/'THIRD_PARTY_NOTICES.md')
-    run('/usr/bin/xcrun','swiftc','-O','-target','arm64-apple-macosx14.0','-module-cache-path',build/'swift-cache','-framework','AppKit','-framework','Security',ROOT/'packaging/Launcher.swift','-o',macos/'UnrealAgent')
+    iconset=build/'UnrealAgent.iconset'
+    run('/usr/bin/xcrun','swift',ROOT/'packaging/generate-app-icon.swift',iconset)
+    run('/usr/bin/iconutil','-c','icns',iconset,'-o',resources/'UnrealAgent.icns')
+    shutil.copy2(ROOT/'packaging/Launcher.swift',build/'main.swift')
+    run('/usr/bin/xcrun','swiftc','-O','-target','arm64-apple-macosx14.0','-module-cache-path',build/'swift-cache','-framework','AppKit','-framework','WebKit','-framework','Security',ROOT/'packaging/AgentWindow.swift',build/'main.swift','-o',macos/'UnrealAgent')
     run('/usr/bin/xcrun','swiftc','-O','-target','arm64-apple-macosx14.0','-module-cache-path',build/'swift-cache','-framework','AppKit','-framework','EventKit',resources/'source/apple-productivity-mcp/calendar-helper/CalendarHelper.swift','-o',macos/'UnrealAgentCalendar')
-    info={'CFBundleExecutable':'UnrealAgent','CFBundleIdentifier':'local.unreal-agent','CFBundleName':'Unreal Agent','CFBundleDisplayName':'Unreal Agent','CFBundlePackageType':'APPL','CFBundleShortVersionString':VERSION,'CFBundleVersion':'2','LSMinimumSystemVersion':'14.0','LSUIElement':True,'NSCalendarsFullAccessUsageDescription':'Read and update Calendar events when you ask Unreal Agent.','NSCalendarsUsageDescription':'Read and update Calendar events when you ask Unreal Agent.','NSAppleEventsUsageDescription':'Access Apple Notes only when you enable the integration and ask Unreal Agent to use it.'}
+    info={'CFBundleExecutable':'UnrealAgent','CFBundleIdentifier':'local.unreal-agent','CFBundleName':'Unreal Agent','CFBundleDisplayName':'Unreal Agent','CFBundlePackageType':'APPL','CFBundleShortVersionString':VERSION,'CFBundleVersion':'2','LSMinimumSystemVersion':'14.0','CFBundleIconFile':'UnrealAgent.icns','NSCalendarsFullAccessUsageDescription':'Read and update Calendar events when you ask Unreal Agent.','NSCalendarsUsageDescription':'Read and update Calendar events when you ask Unreal Agent.','NSAppleEventsUsageDescription':'Access Apple Notes only when you enable the integration and ask Unreal Agent to use it.'}
     with (contents/'Info.plist').open('wb') as out:plistlib.dump(info,out)
-    provenance={'version':VERSION,'platform':'darwin-arm64','node':subprocess.check_output([str(args.node),'--version'],text=True).strip(),'nodeSHA256':sha(args.node),'runnerRevision':revision,'runnerSHA256':sha(args.runner),'dependencyMode':'offline-locked' if args.offline_deps else 'npm-ci','sourceSHA256':{str(p.relative_to(ROOT/'source')):sha(p) for p in sorted((ROOT/'source').rglob('*')) if p.is_file()}}
+    provenance={'version':VERSION,'platform':'darwin-arm64','node':subprocess.check_output([str(args.node),'--version'],text=True).strip(),'nodeSHA256':sha(args.node),'runnerRevision':revision,'runnerSHA256':sha(args.runner),'liveRunner':live_info,'dependencyMode':'offline-locked' if args.offline_deps else 'npm-ci','sourceSHA256':{str(p.relative_to(ROOT/'source')):sha(p) for p in sorted((ROOT/'source').rglob('*')) if p.is_file()}}
     (resources/'BUILD-INFO.json').write_text(json.dumps(provenance,indent=2)+'\n')
     # Discard inherited Finder/provenance metadata from this newly built tree.
     run('/usr/bin/xattr','-cr',bundle)
-    for file in [runtime/'node',runtime/'unreal-agent-runner',macos/'UnrealAgent']:
+    for file in [runtime/'node',runtime/'unreal-agent-runner',runtime/'unreal-agent-live-runner',macos/'UnrealAgent']:
         run('/usr/bin/codesign','--force','--sign',identity,file)
     # The Calendar helper becomes its own responsible process for privacy
     # checks, so give it the app's identifier to match the app's Calendar grant.
@@ -101,6 +111,10 @@ def main():
     provenance['inputRunnerSHA256']=provenance.pop('runnerSHA256')
     provenance['bundledNodeSHA256']=sha(runtime/'node')
     provenance['bundledRunnerSHA256']=sha(runtime/'unreal-agent-runner')
+    provenance['liveRunner']['bundledBinarySHA256']=sha(runtime/'unreal-agent-live-runner')
+    live_info['binarySHA256']=provenance['liveRunner']['bundledBinarySHA256']
+    live_info['officialBinarySHA256']=provenance['bundledRunnerSHA256']
+    (runtime/'unreal-agent-live-runner.json').write_text(json.dumps(live_info,indent=2)+'\n')
     (resources/'BUILD-INFO.json').write_text(json.dumps(provenance,indent=2)+'\n')
     run('/usr/bin/codesign','--force','--sign',identity,bundle)
     run('/usr/bin/codesign','--verify','--deep','--strict',bundle)
@@ -123,4 +137,7 @@ def main():
     shutil.copy2(resources/'BUILD-INFO.json',release/'BUILD-INFO.json')
     (release/'SHA256SUMS.txt').write_text(''.join(f'{sha(p)}  {p.name}\n' for p in (pkg,archive,release/'BUILD-INFO.json')))
     print('Built releases in',release)
-if __name__=='__main__':main()
+if __name__=='__main__':
+    with (ROOT/'.build.lock').open('w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        main()

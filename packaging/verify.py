@@ -13,6 +13,18 @@ for name,expected in provenance['sourceSHA256'].items():
 subprocess.run([str(node),'--version'],check=True)
 help_result=subprocess.run([str(resources/'runtime/bin/unreal-agent-runner'),'--help'],capture_output=True,text=True)
 assert 'Request schema' in help_result.stdout+help_result.stderr
+live=resources/'runtime/bin/unreal-agent-live-runner'
+with live.open('rb') as stream:assert hashlib.file_digest(stream,'sha256').hexdigest()==provenance['liveRunner']['bundledBinarySHA256']
+live_help=subprocess.run([str(live),'--help'],capture_output=True,text=True)
+assert '-live-input' in live_help.stdout+live_help.stderr
+pair=json.loads(Path(str(live)+'.json').read_text())
+assert pair['officialBinarySHA256']==provenance['bundledRunnerSHA256']
+assert pair['binarySHA256']==provenance['liveRunner']['bundledBinarySHA256']
+extension=hashlib.sha256()
+for name in ('runner.patch','live_input.go','live_input_test.go'):
+    extension.update(name.encode());extension.update((resources/'source/live-runner'/name).read_bytes())
+assert extension.hexdigest()==pair['extensionSHA256']
+assert pair['upstreamRevision']==provenance['runnerRevision']
 subprocess.run(['codesign','--verify','--deep','--strict',str(resources.parent.parent)],check=True)
 for file in (ROOT/'source').rglob('*'):
     if not file.is_file():continue
@@ -33,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='unreal-clean-home-') as temporary:
     # Bind an unused port; no daemon/LaunchAgent is started and no provider is called.
     import socket
     with socket.socket() as listener:listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
-    env={'HOME':temporary,'PATH':str(node.parent)+':/usr/bin:/bin','PORT':str(port),'UNREAL_AGENT_RUNNER':str(resources/'runtime/bin/unreal-agent-runner')}
+    env={'HOME':temporary,'PATH':str(node.parent)+':/usr/bin:/bin','PORT':str(port),'UNREAL_AGENT_RUNNER':str(resources/'runtime/bin/unreal-agent-runner'),'UNREAL_AGENT_LIVE_RUNNER':str(live)}
     with open(Path(temporary)/'server.log','w+') as log:
         process=subprocess.Popen([str(node),str(resources/'source/agent-console/server.mjs')],env=env,stdout=log,stderr=log)
         try:
@@ -45,6 +57,13 @@ with tempfile.TemporaryDirectory(prefix='unreal-clean-home-') as temporary:
             else:raise AssertionError('Front end did not start')
             for endpoint in ('/app.js','/styles.css','/api/projects'):
                 with urllib.request.urlopen(f'http://127.0.0.1:{port}'+endpoint,timeout=2) as response:assert response.status==200
+            # These actions need an attached owner, so a clean home must reach
+            # their control handler (409), rather than lose the route (404).
+            for action in ('steer','remove-queued'):
+                request=urllib.request.Request(f'http://127.0.0.1:{port}/api/sessions/hydra_session_offlinecheck/'+action,
+                    data=b'{"inputId":"offline-check"}',headers={'Content-Type':'application/json'},method='POST')
+                try:urllib.request.urlopen(request,timeout=2);raise AssertionError('An unattached task accepted control')
+                except urllib.error.HTTPError as e:assert e.code==409,f'{action} control route returned {e.code}'
             request=urllib.request.Request(f'http://127.0.0.1:{port}/api/projects',headers={'Origin':'https://untrusted.example'})
             try:urllib.request.urlopen(request);raise AssertionError('Cross-origin request was accepted')
             except urllib.error.HTTPError as e:assert e.code==403

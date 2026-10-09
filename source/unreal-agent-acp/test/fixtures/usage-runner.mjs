@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const request = JSON.parse(process.argv.at(-1));
+request.prompt ||= request.messages?.map((message) => message.content).join("\n");
 const reply = (id, usage) => ({ Kind: "model_response", Data: { Response: {
   ID: id, Usage: usage, Output: [{ Type: "message", Data: { Phase: "final", Text: request.prompt } }]
 } } });

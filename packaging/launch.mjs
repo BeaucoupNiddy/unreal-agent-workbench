@@ -14,7 +14,7 @@ export function plist(value) {
 }
 export function installPlan(home, base) {
   const source = path.join(base,'source');
-  const env = { HOME:home, PATH:`${base}/runtime/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`, HYDRA_ACP_HOME:path.join(home,'.hydra-acp'), UNREAL_AGENT_RUNNER:path.join(base,'runtime/bin/unreal-agent-runner'), UNREAL_CALENDAR_HELPER:path.resolve(base,'../MacOS/UnrealAgentCalendar') };
+  const env = { HOME:home, PATH:`${base}/runtime/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`, HYDRA_ACP_HOME:path.join(home,'.hydra-acp'), UNREAL_AGENT_RUNNER:path.join(base,'runtime/bin/unreal-agent-runner'), UNREAL_AGENT_LIVE_RUNNER:path.join(base,'runtime/bin/unreal-agent-live-runner'), UNREAL_CALENDAR_HELPER:path.resolve(base,'../MacOS/UnrealAgentCalendar') };
   return labels.map((label,i) => ({file:path.join(home,'Library/LaunchAgents',`${label}.plist`), value:{Label:label, ProgramArguments:[path.join(base,'runtime/bin/node'),path.join(source,i ? 'agent-console/server.mjs':'hydra-gateway/node_modules/@hydra-acp/cli/dist/daemon.js')], WorkingDirectory:source, EnvironmentVariables:env,RunAtLoad:true,KeepAlive:true,ThrottleInterval:5,StandardOutPath:path.join(home,'Library/Logs',`${label}.log`),StandardErrorPath:path.join(home,'Library/Logs',`${label}.log`)}}));
 }
 export function mergeConfig(previous, base) {
@@ -50,11 +50,13 @@ async function main() {
     await fs.mkdir(path.dirname(item.file),{recursive:true});
     await fs.writeFile(item.file,plist(item.value),{mode:0o600});
     try{await exec('/bin/launchctl',['print',`${domain}/${item.value.Label}`]);}catch{await exec('/bin/launchctl',['bootstrap',domain,item.file]);}
-    await exec('/bin/launchctl',['kickstart',`${domain}/${item.value.Label}`]);
+    // Reopening the Dock window must not interrupt an active agent task.
+    // A newly bootstrapped RunAtLoad service starts automatically.
+
   }
   let detail='Services are starting';
   for(let attempt=0;attempt<60;attempt++) {
-    try{const response=await fetch('http://127.0.0.1:4318/api/status',{signal:AbortSignal.timeout(2000)});const status=await response.json();if(!status.ready)throw new Error(status.error||'Backend is not ready');if(!process.argv.includes('--check'))await exec('/usr/bin/open',['http://127.0.0.1:4318/']);return;}catch(e){detail=e.message;await new Promise(resolve=>setTimeout(resolve,500));}
+    try{const response=await fetch('http://127.0.0.1:4318/api/status',{signal:AbortSignal.timeout(2000)});const status=await response.json();if(!status.ready)throw new Error(status.error||'Backend is not ready');if(!process.argv.includes('--check'))return;}catch(e){detail=e.message;await new Promise(resolve=>setTimeout(resolve,500));}
   }
   throw new Error(`Startup failed: ${detail}. See ~/Library/Logs/local.unreal-agent.*.log.`);
 }

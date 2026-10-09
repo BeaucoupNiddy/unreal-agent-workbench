@@ -1,8 +1,25 @@
+import { renderApprovalPanel } from "./approval-panel.js";
+import { folderApprovalReply } from "./folder-permissions.js";
+import { setupKeyboardDismissal } from "./keyboard-dismissal.js";
 import { renderMarkdown } from "./markdown.js";
+import { copyMessage } from "./copy-message.js";
 import { applyModelFavorites } from "./favorites.js";
 import { activitySummary, groupTranscriptEntries } from "./activity.js";
-import { appendMessageChunk } from "./transcript.js";
+import { timelineReasoningText, timelineToolLabel } from "./timeline-label.js";
+import { startProgress, finishProgress, recordTool, recordResponse, progressSnapshot, hydrateProgress, recordThought, progressGroups } from "./live-progress.js";
+import { taskStatus } from "./task-state.js";
+import { appendMessageChunk, appendToolCall } from "./transcript.js";
+import { createScrollFollow } from "./scroll-follow.js";
+import { isDelegateCommand, isSubagentUpdate, renderSubagentGroup, tickSubagentTimers, upsertSubagent } from "./subagent-view.js";
 import { moveId, moveIdBy, orderedByIds } from "./sidebar-order.js";
+import { clampSidebarWidth, sidebarWidthLimit, DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH } from "./sidebar-width.js";
+import { apiEquivalent, assumesCacheReadRate, threadContextPercent } from "./usage-equivalent.js";
+import { formatDashboardTokens } from "./dashboard-format.js";
+import { subscriptionIncrease } from "./subscription-delta.js";
+import { RecentTranscripts } from "./recent-transcripts.js";
+import { newInputId, recoverInputId, finishInputId } from "./input-recovery.js";
+import { setupRunCommand } from "./run-command.js";
+import { addChoices, appendSubagent, applyModelToCards, collectSubagents, delegationChoices, inheritModel, modelChoices, renderSubagents, subagentPresets } from "./agents-settings.js";
 
 const $ = (selector) => document.querySelector(selector);
 const PENDING_DRAFTS_KEY = "unreal-console-pending-drafts";
@@ -29,7 +46,7 @@ const BRANDING = {
 const state = {
   sessions: [], projects: [], removedProjectPaths: [], oneOffWorkspacePath: null, expandedProjectPaths: new Set(), currentProjectPath: null, currentId: null, ready: false, stream: null, configOptions: [], modelFavorites: [],
   sidebarOrder: { projects: [], chats: {} },
-  entries: [], byMessage: new Map(), byTool: new Map(), running: false, promptRequests: 0, creatingChat: false, submitting: false, attachments: [],
+  queuedInputs: [], entries: [], byMessage: new Map(), byTool: new Map(), running: false, promptRequests: 0, stopping: false, taskError: "", connection: "Connecting", creatingChat: false, submitting: false, attachments: [],
   pendingDeleteId: null, deletingChat: false, pendingProjectId: null, editingProjectId: null, editingProjectPath: null, editingLegacyProject: false, deletingProject: false,
   capabilities: { appleNotes: true, appleCalendar: true },
   generation: { memoryEnabled: true, memoryModel: "gpt-6-luna", titleEnabled: true, titleModel: "gpt-6-luna" },
@@ -38,23 +55,55 @@ const state = {
   modelProviders: [], catalogProvider: null, catalogLoading: false, refreshingModels: false, catalogError: "", modelSettingsReady: false, preferencesLoadId: 0,
   configReady: null, resolveConfigReady: null, configReadyTimeout: null,
   openActivityGroups: new Set(),
+  openToolCalls: new Set(), expandedNotes: new Set(),
+  liveProgress: null, progressTurns: [], selectedProgressTurn: null, expandedProgressTools: new Set(),
   openControl: null,
+  openRouterKey: null, currentProvider: null, subscriptionUsage: {}, subscriptionRequest: 0, subscriptionBaseline: null, usageReference: null,
   usage: { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, thoughtTokens: 0, costAmount: null, costKnown: false, used: 0, size: 0 },
-  prefs: { theme: "system", accent: "lime", showThoughts: true, jambalayaMode: false }
+  prefs: { theme: "system", accent: "lime", showThoughts: true, jambalayaMode: false, usageMetric: "auto" }
 };
+
+const recentTranscripts = new RecentTranscripts();
+let replayingHistory = false;
+
+function cacheCurrentTranscript() {
+  if (!state.currentId) return;
+  recentTranscripts.put(state.currentId, {
+    entries: state.entries, byMessage: state.byMessage, byTool: state.byTool,
+    openActivityGroups: state.openActivityGroups, openToolCalls: state.openToolCalls,
+    progressTurns: state.progressTurns, liveProgress: state.liveProgress,
+    usage: state.usage, configOptions: state.configOptions, modelFavorites: state.modelFavorites,
+    running: state.running, promptRequests: state.promptRequests, taskError: state.taskError
+  });
+}
+
+function restoreTranscript(snapshot) {
+  for (const key of ["entries", "byMessage", "byTool", "openActivityGroups", "openToolCalls",
+    "progressTurns", "liveProgress", "usage", "configOptions", "modelFavorites", "running", "promptRequests", "taskError"]) {
+    state[key] = snapshot[key];
+  }
+  state.selectedProgressTurn = null;
+  renderUsageLabel();
+  renderTranscript();
+}
 
 const ui = {
   sidebar: $("#sidebar"), sessionList: $("#sessionList"), sessionCount: $("#sessionCount"),
-  taskTitle: $("#taskTitle"), taskPath: $("#taskPath"), liveState: $("#liveState"),
+  taskTitle: $("#taskTitle"), taskPath: $("#taskPath"), liveState: $("#liveState"), timelineButton: $("#timelineButton"), liveProgressPanel: $("#liveProgressPanel"),
   emptyState: $("#emptyState"), messages: $("#messages"), prompt: $("#prompt"),
-  composer: $("#composer"), composerContext: $("#composerContext"), toast: $("#toast"), stopTask: $("#stopTask"),
+  followupQueue: $("#followupQueue"), composer: $("#composer"), composerContext: $("#composerContext"), toast: $("#toast"), stopTask: $("#stopTask"),
   attachmentList: $("#attachmentList"), imagePicker: $("#imagePicker"), dropOverlay: $("#dropOverlay"),
-  conversation: $("#conversation"), controlStrip: $("#controlStrip"), controlPopover: $("#controlPopover"),
+  conversation: $("#conversation"), jumpLatest: $("#jumpLatest"), controlStrip: $("#controlStrip"), controlPopover: $("#controlPopover"),
   preferencesDialog: $("#preferencesDialog"), deleteChatDialog: $("#deleteChatDialog"),
   deleteChatTitle: $("#deleteChatTitle"), deleteChatCopy: $("#deleteChatCopy"), confirmDeleteChat: $("#confirmDeleteChat"),
-  projectDialog: $("#projectDialog"), deleteProjectDialog: $("#deleteProjectDialog")
+  projectDialog: $("#projectDialog"), deleteProjectDialog: $("#deleteProjectDialog"),
+  chatSearchDialog: $("#chatSearchDialog"), chatSearchInput: $("#chatSearchInput"),
+  chatSearchStatus: $("#chatSearchStatus"), chatSearchResults: $("#chatSearchResults")
 };
+const scrollFollow = createScrollFollow(ui.conversation, { onChange: (following) => { if (following) ui.jumpLatest.hidden = true; } });
+ui.jumpLatest.addEventListener("click", () => scrollFollow.follow());
 
+let commandPanel = null;
 function basename(value = "") { return value.split("/").filter(Boolean).pop() || value || "Workspace"; }
 function brand() { return state.prefs.jambalayaMode ? BRANDING.jambalaya : BRANDING.default; }
 function displayModel(value) {
@@ -88,10 +137,25 @@ function showToast(message) {
   ui.toast.textContent = message; ui.toast.hidden = false;
   clearTimeout(showToast.timer); showToast.timer = setTimeout(() => { ui.toast.hidden = true; }, 3600);
 }
+function currentTaskStatus() {
+  return taskStatus({ chat: Boolean(state.currentId), project: Boolean(state.currentProjectPath),
+    ready: state.ready, connection: state.connection, running: state.running,
+    submitting: state.submitting, stopping: state.stopping, error: state.taskError, entries: state.entries });
+}
+function renderTaskStatus() {
+  const status = currentTaskStatus();
+  const label = ui.liveState.querySelector("span");
+  ui.liveState.className = `live-state ${status.kind}`;
+  if (label.textContent !== status.label) label.textContent = status.label;
+  ui.liveState.disabled = !state.progressTurns.length;
+  ui.timelineButton.disabled = !state.currentId;
+  commandPanel?.sync();
+  ui.liveState.title = state.progressTurns.length ? `View turn timeline — ${status.label}` : (status.detail ? `${status.label} — ${status.detail}` : status.label);
+  return status;
+}
 function setConnection(ready, label) {
-  state.ready = ready;
-  ui.liveState.className = `live-state ${ready ? "ready" : "offline"}`;
-  ui.liveState.querySelector("span").textContent = label;
+  state.ready = ready; state.connection = label;
+  renderTaskStatus();
 }
 function requestJson(url, options = {}) {
   return fetch(url, { ...options, headers: { "content-type": "application/json", ...(options.headers || {}) } })
@@ -217,6 +281,7 @@ function selectProject(folderPath) {
   setProjectExpanded(folderPath, true);
   if (state.currentProjectPath === folderPath && !state.currentId) { renderSessions(); return; }
   closeControlPopover();
+  cacheCurrentTranscript();
   state.currentProjectPath = folderPath; state.currentId = null;
   try { localStorage.setItem("unreal-console-project", folderPath); } catch {}
   state.stream?.close(); state.stream = null;
@@ -225,14 +290,14 @@ function selectProject(folderPath) {
   ui.prompt.value = ""; ui.prompt.disabled = false; ui.prompt.style.height = "auto";
   state.attachments = []; renderAttachments();
   $("#attachImage").disabled = false;
-  for (const control of ["#modelControl", "#permissionControl", "#reasoningControl", "#usageControl"]) $(control).disabled = false;
+  for (const control of ["#modelControl", "#permissionControl", "#reasoningControl", "#usageControl", "#mobileControls"]) $(control).disabled = false;
   $("#moreActions").disabled = true;
-  resetUsage();
+  state.currentProvider = null; state.subscriptionBaseline = null; state.usageReference = null; resetUsage();
   ui.sidebar.classList.remove("open");
   ui.taskTitle.textContent = project.name; ui.taskPath.textContent = project.path;
   ui.composerContext.textContent = "Write a message to start a new chat";
   $("#welcomeTitle").textContent = project.name;
-  $("#welcomeCopy").textContent = "Type below to start a chat. Your conversations will stay grouped here and use this folder as their workspace.";
+  $("#welcomeCopy").hidden = true;
   const starter = $("#starterNewChat");
   starter.querySelector("strong").textContent = "Start a chat";
   starter.querySelector("small").textContent = `Work in ${project.name}`;
@@ -421,6 +486,7 @@ function openDeleteChat(item) {
 
 function showNoProject() {
   closeControlPopover();
+  cacheCurrentTranscript();
   state.currentProjectPath = null; state.currentId = null;
   state.stream?.close(); state.stream = null;
   state.resolveConfigReady?.(null); state.resolveConfigReady = null; clearTimeout(state.configReadyTimeout);
@@ -428,14 +494,15 @@ function showNoProject() {
   ui.prompt.value = ""; ui.prompt.disabled = true; ui.prompt.style.height = "auto";
   state.attachments = []; renderAttachments();
   $("#attachImage").disabled = true;
-  for (const control of ["#modelControl", "#permissionControl", "#reasoningControl", "#usageControl"]) $(control).disabled = true;
+  for (const control of ["#modelControl", "#permissionControl", "#reasoningControl", "#usageControl", "#mobileControls"]) $(control).disabled = true;
   $("#moreActions").disabled = true;
-  resetUsage();
+  state.currentProvider = null; state.subscriptionBaseline = null; state.usageReference = null; resetUsage();
   ui.sidebar.classList.remove("open");
   ui.taskTitle.textContent = "Select a project"; ui.taskPath.textContent = "Add a folder to organize your chats.";
   ui.composerContext.textContent = "Select a task to begin";
   $("#welcomeTitle").innerHTML = "Your work,<br /><em>without the clutter.</em>";
   $("#welcomeCopy").textContent = "Add a project folder to get started. Each project keeps its chats together.";
+  $("#welcomeCopy").hidden = false;
   const starter = $("#starterNewChat");
   starter.querySelector("strong").textContent = "Start a chat";
   starter.querySelector("small").textContent = "Work in the selected project";
@@ -459,6 +526,7 @@ async function deleteSelectedChat() {
   let deleted = false;
   try {
     await requestJson(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    recentTranscripts.delete(id);
     const wasCurrent = state.currentId === id;
     const previousProjectPath = state.currentProjectPath;
     state.sessions = state.sessions.filter((session) => session.sessionId !== id);
@@ -492,18 +560,70 @@ async function deleteSelectedChat() {
   }
 }
 
+let chatSearchTimer;
+let chatSearchRequest = 0;
+let chatSearchController;
+function closeChatSearch() { ui.chatSearchDialog.close(); }
+function openChatSearch() {
+  if (!ui.chatSearchDialog.open) {
+    ui.chatSearchDialog.showModal();
+    if (ui.chatSearchInput.value.trim()) void runChatSearch();
+  }
+  ui.chatSearchInput.focus();
+  ui.chatSearchInput.select();
+}
+async function runChatSearch() {
+  const query = ui.chatSearchInput.value.trim();
+  const requestId = ++chatSearchRequest;
+  chatSearchController?.abort();
+  ui.chatSearchResults.replaceChildren();
+  if (!query) { ui.chatSearchStatus.textContent = "Type to search your chats."; return; }
+  ui.chatSearchStatus.textContent = "Searching…";
+  const controller = new AbortController();
+  chatSearchController = controller;
+  try {
+    const response = await requestJson(`/api/chat-search?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+    if (requestId !== chatSearchRequest || !ui.chatSearchDialog.open) return;
+    const results = response.results || [];
+    ui.chatSearchStatus.textContent = results.length ? `${results.length} chat${results.length === 1 ? "" : "s"} found${results.length === 50 ? " (first 50)" : ""}` : "No matching chats.";
+    for (const result of results) {
+      const button = document.createElement("button"); button.type = "button"; button.className = "chat-search-result";
+      const title = document.createElement("strong"); title.textContent = result.title;
+      const meta = document.createElement("small");
+      const project = projectViews().find((item) => result.cwd && pathContains(item.path, result.cwd));
+      meta.textContent = `${project?.name || basename(result.cwd)} · ${result.updatedAt ? relativeTime(result.updatedAt) : ""}`;
+      button.append(title, meta);
+      if (result.snippet) {
+        const snippet = document.createElement("span"); snippet.className = "search-snippet";
+        snippet.textContent = `${result.role}: ${result.snippet}`; button.append(snippet);
+      }
+      button.addEventListener("click", () => { closeChatSearch(); selectSession(result.sessionId); });
+      ui.chatSearchResults.append(button);
+    }
+  } catch (error) {
+    if (requestId === chatSearchRequest && error.name !== "AbortError") ui.chatSearchStatus.textContent = `Search failed: ${error.message}`;
+  }
+}
+
 function resetTranscript() {
-  state.entries = []; state.byMessage.clear(); state.byTool.clear(); state.configOptions = []; state.running = false; state.promptRequests = 0;
-  state.openActivityGroups.clear();
+  state.queuedInputs = [];
+  state.deliveryIds = new Set();
+  state.entries = []; state.byMessage = new Map(); state.byTool = new Map(); state.configOptions = []; state.running = false; state.promptRequests = 0; state.stopping = false; state.taskError = "";
+  state.liveProgress = null; state.progressTurns = []; state.selectedProgressTurn = null; state.expandedProgressTools.clear(); closeProgressPanel();
+  state.openActivityGroups = new Set();
+  state.openToolCalls = new Set(); state.expandedNotes = new Set();
   renderTranscript();
 }
 
-function selectSession(id) {
+function selectSession(id, initialConfig = []) {
   if (state.currentId === id && state.stream) return;
   const item = state.sessions.find((session) => session.sessionId === id);
   if (!item) { showToast("This chat is not available yet. Refresh the project and try again."); return; }
   closeControlPopover();
+  if (state.currentId !== id) cacheCurrentTranscript();
+  const cached = recentTranscripts.take(id);
   state.currentId = id;
+  scrollFollow.follow();
   const project = projectForSession(item);
   state.currentProjectPath = project?.path || null;
   if (project) setProjectExpanded(project.path, true);
@@ -512,11 +632,16 @@ function selectSession(id) {
   renderSessions();
   ui.taskTitle.textContent = item.title || "Untitled chat"; ui.taskPath.textContent = item.cwd || "Local workspace";
   ui.composer.querySelector(".send-button").disabled = false;
-  for (const control of ["#modelControl", "#permissionControl", "#reasoningControl", "#usageControl", "#moreActions"]) $(control).disabled = false;
+  for (const control of ["#modelControl", "#permissionControl", "#reasoningControl", "#usageControl", "#mobileControls", "#moreActions"]) $(control).disabled = false;
   ui.composerContext.textContent = `${basename(item.cwd)} · ${displayModel(item.currentModel)}`;
   $("#modelLabel").textContent = (item.currentModel || "Model").split("/").pop();
-  resetUsage(item.currentUsage);
-  ui.sidebar.classList.remove("open"); resetTranscript(); connectStream(id);
+  state.currentProvider = null; state.subscriptionBaseline = null; state.usageReference = null; resetUsage(item.currentUsage);
+  ui.sidebar.classList.remove("open");
+  resetTranscript();
+  if (cached) restoreTranscript(cached);
+  else state.configOptions = initialConfig;
+  applyConfigLabels();
+  connectStream(id);
 }
 
 function connectStream(id) {
@@ -537,18 +662,78 @@ function connectStream(id) {
   };
   setConnection(false, "Opening chat…");
   const stream = new EventSource(`/api/sessions/${encodeURIComponent(id)}/events`); state.stream = stream;
+  // Attach replays the full history before the ready event. Keep the cached
+  // transcript visible while that happens, then replace it atomically with
+  // the authoritative replay. Never append replayed chunks to cached text.
+  const history = [];
+  let attached = false;
+  const applyFrame = ({ type, data }) => {
+    if (type === "hydra") handleHydra(data);
+    else if (type === "permission") addPermission(data);
+    else handleConsole(data);
+  };
+  const queueOrApply = (type, data) => {
+    if (state.stream !== stream) return;
+    if (!attached) { history.push({ type, data }); return; }
+    applyFrame({ type, data });
+  };
   stream.addEventListener("ready", (event) => {
-    const data = JSON.parse(event.data); state.modelFavorites = data.modelFavorites || [];
+    if (state.stream !== stream) return;
+    const data = JSON.parse(event.data);
+    replayingHistory = true;
+    try {
+      resetTranscript();
+      for (const frame of history) applyFrame(frame);
+    } finally { replayingHistory = false; history.length = 0; }
+    if (Number.isFinite(data.activePrompts)) {
+      state.promptRequests = data.activePrompts; state.running = data.activePrompts > 0;
+    }
+    state.queuedInputs = data.queuedInputs || [];
+    attached = true; state.modelFavorites = data.modelFavorites || [];
+    state.progressTurns = (data.turnTimeline || []).map(hydrateProgress).filter(Boolean);
+    state.liveProgress = state.progressTurns.at(-1) || null;
+    if (state.selectedProgressTurn !== null && state.selectedProgressTurn >= state.progressTurns.length) state.selectedProgressTurn = null;
     state.configOptions = applyModelFavorites(data.configOptions || [], state.modelFavorites);
+    const modelDescription = state.configOptions.find((option) => option.id === "model")?.description || "";
+    state.currentProvider = data._meta?.["unreal-agent/provider"]
+      || (modelDescription.includes("through Claude Code") ? "claude-code"
+        : modelDescription.includes("through OpenAI Codex") ? "openai-codex" : null);
+    const activeId = id;
+    state.subscriptionBaseline = null; state.usageReference = null;
+    void refreshThreadUsageDetails(activeId);
+    renderUsageLabel(); void refreshSubscriptionUsage(state.currentProvider);
     applyConfigLabels(); setConnection(true, "Live with Hydra"); renderTranscript(); settleConfigReady(state.configOptions);
   });
-  stream.addEventListener("hydra", (event) => handleHydra(JSON.parse(event.data)));
-  stream.addEventListener("permission", (event) => addPermission(JSON.parse(event.data)));
-  stream.addEventListener("console", (event) => handleConsole(JSON.parse(event.data)));
+  stream.addEventListener("hydra", (event) => queueOrApply("hydra", JSON.parse(event.data)));
+  stream.addEventListener("permission", (event) => queueOrApply("permission", JSON.parse(event.data)));
+  stream.addEventListener("console", (event) => queueOrApply("console", JSON.parse(event.data)));
   stream.addEventListener("fault", (event) => {
-    const data = JSON.parse(event.data); showToast(data.error); setConnection(false, "Task unavailable"); settleConfigReady(null);
+    if (state.stream !== stream) return;
+    const data = JSON.parse(event.data); finishProgress(state.liveProgress, "interrupted"); showToast(data.error); setConnection(false, "Task unavailable"); renderTranscript(); settleConfigReady(null);
   });
-  stream.onerror = () => setConnection(false, "Reconnecting");
+  stream.onerror = () => {
+    if (state.stream !== stream) return;
+    // EventSource may reconnect the same URL; its new attach replays full history.
+    attached = false; history.length = 0;
+    setConnection(false, "Reconnecting"); renderTranscript();
+  };
+}
+
+async function refreshThreadUsageDetails(sessionId) {
+  try {
+    const details = await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/usage-details`);
+    if (state.currentId !== sessionId) return;
+    state.subscriptionBaseline = details.baseline?.provider === details.provider ? details.baseline : null;
+    state.usageReference = details.reference;
+    if (!state.currentProvider && details.provider) state.currentProvider = details.provider;
+    const snapshot = details.usage;
+    if (snapshot && (snapshot.inputTokens || 0) >= state.usage.inputTokens
+      && (snapshot.outputTokens || 0) >= state.usage.outputTokens) resetUsage(snapshot);
+    state.subagentUsage = details.subagents || null;
+    if (state.usage.size <= 0 && details.reference?.contextWindow) state.usage.size = details.reference.contextWindow;
+    renderUsageLabel();
+    if (state.openControl === 'usageControl') openUsagePopover($('#usageControl'));
+  } catch { /* A missing agent metadata file must not block the conversation. */ }
 }
 
 function textFrom(content) {
@@ -590,28 +775,42 @@ function messageEntry(role, id) {
 
 function handleHydra(message) {
   if (message.method !== "session/update") return;
+  const deliveryId = message.params?._meta?.["unreal-agent/event-id"];
+  state.deliveryIds ||= new Set();
+  if (deliveryId && state.deliveryIds.has(deliveryId)) return;
+  if (deliveryId) state.deliveryIds.add(deliveryId);
   const update = message.params?.update || {};
   const kind = update.sessionUpdate;
-  if (kind === "user_message_chunk" || kind === "agent_message_chunk") {
+  if (kind === "permission_resolved" && update.toolCallId) {
+    state.entries = state.entries.filter((entry) => entry.type !== "permission" || entry.request.toolCall?.toolCallId !== update.toolCallId);
+  } else if (kind === "user_message_chunk" || kind === "agent_message_chunk") {
     const role = kind.startsWith("user") ? "user" : "agent";
+    const text = textFrom(update.content);
+    if (role === "agent" && text && Number.isFinite(message.observedAt)) recordResponse(state.liveProgress, message.observedAt);
     appendMessageChunk(state.entries, state.byMessage, {
-      role, id: update.messageId, text: textFrom(update.content), images: imagesFrom(update.content)
+      role, id: update.messageId, text, images: imagesFrom(update.content)
     });
   } else if (kind === "agent_thought_chunk") {
     const id = `thought-${update.messageId || "current"}`;
     let entry = state.byMessage.get(id);
     if (!entry) { entry = { type: "thought", id, text: "" }; state.byMessage.set(id, entry); state.entries.push(entry); }
     entry.text += textFrom(update.content);
+    if (Number.isFinite(message.observedAt)) recordThought(state.liveProgress, update, message.observedAt);
+  } else if ((kind === "tool_call" || kind === "tool_call_update") && isSubagentUpdate(update)) {
+    upsertSubagent(state.entries, state.byTool, update);
   } else if (kind === "tool_call") {
-    const entry = { type: "tool", id: update.toolCallId, title: update.title || update.kind || "Tool", kind: update.kind, status: update.status || "pending", input: update.rawInput, output: "" };
-    state.byTool.set(update.toolCallId, entry); state.entries.push(entry);
+    if (Number.isFinite(message.observedAt)) recordTool(state.liveProgress, update, message.observedAt);
+    const entry = { type: "tool", id: update.toolCallId, title: update.title || update.kind || "Tool", kind: update.kind, status: update.status || "pending", input: update.rawInput, output: "", delegation: isDelegateCommand(update) };
+    state.byTool.set(update.toolCallId, entry); appendToolCall(state.entries, entry);
   } else if (kind === "tool_call_update") {
+    if (Number.isFinite(message.observedAt)) recordTool(state.liveProgress, update, message.observedAt);
     let entry = state.byTool.get(update.toolCallId);
     if (!entry) { entry = { type: "tool", id: update.toolCallId, title: "Tool activity", status: "pending", output: "" }; state.byTool.set(update.toolCallId, entry); state.entries.push(entry); }
     entry.status = update.status || entry.status; entry.output = textFrom(update.content) || textFrom(update.rawOutput?.output) || entry.output;
   } else if (kind === "usage_update") {
     updateUsage(update);
   } else if (kind === "config_option_update") {
+    if (update.configOptions) state.configOptions = applyModelFavorites(update.configOptions, state.modelFavorites);
     const option = state.configOptions.find((item) => item.id === update.configId);
     if (option) option.currentValue = update.value;
     applyConfigLabels();
@@ -623,7 +822,10 @@ function handleHydra(message) {
       ui.taskTitle.textContent = update.title;
     }
   } else if (kind === "turn_complete") {
-    state.running = false;
+    if (!state.promptRequests) state.running = false;
+    state.stopping = false;
+    // The turn notification can precede the prompt result (and later tool updates).
+    // The request only ends when the Console receives session/prompt's response.
   } else if (kind === "prompt_received") {
     state.running = true;
   }
@@ -631,17 +833,42 @@ function handleHydra(message) {
 }
 
 function handleConsole(event) {
-  if (event.kind === "prompt_started") state.promptRequests += 1;
-  else if (event.kind === "prompt_complete") state.promptRequests = Math.max(0, state.promptRequests - 1);
+  if (event.kind === "queue_changed") {
+    state.queuedInputs = event.queuedInputs || [];
+    renderQueuedInputs(); return;
+  }
+  if (event.kind === "queue_error") { showToast(event.error); return; }
+  if (event.inputId && ["prompt_complete", "prompt_error"].includes(event.kind)) finishInputId(event.inputId);
+  if (event.kind === "permission_answered") {
+    state.entries = state.entries.filter((entry) => entry.type !== "permission" || entry.requestId !== event.requestId);
+    renderTranscript(); return;
+  }
+  if (event.kind === "prompt_started") {
+    if (!state.promptRequests) {
+      state.liveProgress = startProgress(event.startedAt || Date.now());
+      state.progressTurns.push(state.liveProgress);
+      state.progressTurns = state.progressTurns.slice(-20);
+      state.selectedProgressTurn = null;
+    }
+    state.promptRequests += 1; state.taskError = ""; state.stopping = false;
+  }
+  else if (event.kind === "prompt_complete") {
+    state.promptRequests = Math.max(0, state.promptRequests - 1); state.stopping = false;
+    if (!state.promptRequests) finishProgress(state.liveProgress, event.outcome || "completed", event.endedAt ?? Date.now());
+    void refreshSubscriptionUsage(state.currentProvider, { fresh: true });
+    if (state.currentId) void refreshThreadUsageDetails(state.currentId);
+  }
   else if (event.kind === "prompt_error") {
-    state.promptRequests = Math.max(0, state.promptRequests - 1);
-    showToast(event.error);
+    state.promptRequests = Math.max(0, state.promptRequests - 1); state.stopping = false; state.taskError = event.error || "The task could not finish.";
+    if (!state.promptRequests) finishProgress(state.liveProgress, "failed", event.endedAt ?? Date.now());
+    showToast(state.taskError);
   }
   state.running = state.promptRequests > 0;
   renderTranscript();
 }
 
 function addPermission(data) {
+  if (state.entries.some((entry) => entry.type === "permission" && entry.requestId === data.requestId)) return;
   state.entries.push({ type: "permission", requestId: data.requestId, request: data }); renderTranscript();
 }
 
@@ -653,6 +880,136 @@ function toolOutput(entry) {
   if (!entry.input) return "Waiting for output…";
   if (typeof entry.input === "string") return entry.input;
   return entry.input.command || JSON.stringify(entry.input, null, 2);
+}
+
+
+function renderLiveProgress() {
+  const panel = ui.liveProgressPanel;
+  if (panel.hidden) return;
+  const empty = !state.progressTurns.length;
+  panel.querySelector(".progress-no-turns").hidden = !empty;
+  panel.querySelector(".progress-board").hidden = empty;
+  panel.querySelector(".progress-turn-select").hidden = empty;
+  panel.querySelector(".progress-heading label").hidden = empty;
+  panel.querySelector(".progress-clock").hidden = empty;
+  if (empty) return;
+  const index = state.selectedProgressTurn ?? state.progressTurns.length - 1;
+  const progress = state.progressTurns[index];
+  if (!progress) return;
+  const snapshot = progressSnapshot(progress);
+  const { elapsed, startedAt, endedAt, responseAt, tools, outcome } = snapshot;
+  const seconds = Math.ceil(elapsed / 1000);
+  const formatTime = (value) => `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
+  const formatOffset = (at) => {
+    const hundredths = Math.max(0, Math.round((at - startedAt) / 10));
+    return `${Math.floor(hundredths / 6000)}:${String(Math.floor(hundredths / 100) % 60).padStart(2, "0")}.${String(hundredths % 100).padStart(2, "0")}`;
+  };
+  panel.querySelector(".progress-clock").textContent = `${formatOffset(startedAt + elapsed)} elapsed`;
+  const selector = panel.querySelector(".progress-turn-select");
+  if (selector.options.length !== state.progressTurns.length) {
+    selector.replaceChildren();
+    state.progressTurns.forEach((turn, i) => {
+      const option = document.createElement("option"); option.value = String(i);
+      option.textContent = `Turn ${i + 1}${turn.endedAt === null ? " · live" : ""} · ${new Date(turn.startedAt).toLocaleString()}`;
+      selector.append(option);
+    });
+  }
+  state.progressTurns.forEach((turn, i) => {
+    selector.options[i].textContent = `Turn ${i + 1}${turn.endedAt === null ? " · live" : ""} · ${new Date(turn.startedAt).toLocaleString()}`;
+  });
+  selector.value = String(index);
+  panel.querySelector(".progress-turn-label").textContent = `Turn ${index + 1}`;
+  panel.querySelector(".progress-outcome").textContent = outcome ? outcome === "completed" ? "Completed" : outcome === "failed" ? "Failed" : "Interrupted" : "Active";
+  // The request includes tool time, so call it a Turn rather than implying the model
+  // was continuously computing. The response marker is the last observed text chunk.
+  const turnRow = { id: "agent-request", title: "Turn", status: outcome || "running", left: 0, width: 100, endedAt };
+  const responseRow = responseAt === null ? null : { id: "response-text", title: "Response", status: "received",
+    left: Math.max(0, Math.min(100, (responseAt - startedAt) / elapsed * 100)), width: 0, endedAt: responseAt };
+  const lanes = panel.querySelector(".progress-lanes");
+  const focusedTool = panel.contains(document.activeElement) ? document.activeElement?.dataset?.progressToolKey : null;
+  lanes.replaceChildren();
+  function appendLane(row) {
+    const lane = document.createElement("div"); lane.className = "progress-lane";
+    const dot = document.createElement("span"); dot.className = `progress-dot ${row.status}`; dot.setAttribute("aria-hidden", "true");
+    const isTool = row.id !== "agent-request" && row.id !== "response-text";
+    const toolKey = isTool ? `${index}:${row.id}` : null;
+    const expanded = isTool && state.expandedProgressTools.has(toolKey);
+    const label = document.createElement(isTool ? "button" : "span"); label.className = "progress-label";
+    label.textContent = isTool ? timelineToolLabel(row.title) : row.title;
+    if (isTool) {
+      lane.classList.add("progress-tool"); label.type = "button";
+      label.dataset.progressToolKey = toolKey;
+      label.setAttribute("aria-expanded", String(expanded));
+      label.setAttribute("aria-controls", `progress-tool-detail-${index}-${tools.indexOf(row)}`);
+      label.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} details for ${label.textContent}: ${row.title}`);
+      label.addEventListener("click", () => {
+        if (expanded) state.expandedProgressTools.delete(toolKey);
+        else state.expandedProgressTools.add(toolKey);
+        renderLiveProgress();
+      });
+    }
+    label.title = row.id === "response-text" ? "Last assistant text observed" : row.id === "agent-request" ? "Request from send to prompt result, including tool time" : row.title;
+    const status = document.createElement("span"); status.className = "progress-status";
+    const statusName = row.status === "running" ? "Running" : row.status === "received" ? "Text seen" : row.status === "completed" ? "Completed" : row.status === "failed" ? "Failed" : row.status === "interrupted" ? "Interrupted" : "Returned";
+    status.textContent = statusName;
+    if (row.endedAt !== null) {
+      const time = document.createElement("small"); time.textContent = formatOffset(row.endedAt);
+      status.append(time);
+    }
+    const track = document.createElement("span"); track.className = "progress-track";
+    const offset = row.endedAt === null ? formatOffset(startedAt + elapsed) : formatOffset(row.endedAt);
+    track.setAttribute("aria-label", `${row.title}: ${statusName} at ${offset} after send`);
+    track.title = `${row.title}: ${statusName} at ${offset} after send${row.endedAt === null ? "" : ` (${new Date(row.endedAt).toLocaleString()})`}`;
+    const bar = document.createElement("span"); bar.className = `progress-bar ${row.status}`;
+    bar.style.left = `${row.left}%`; bar.style.width = `${row.width}%`;
+    track.append(bar);
+    if (lane.classList.contains("progress-tool")) {
+      const icon = document.createElement("span"); icon.className = "progress-tool-icon"; icon.textContent = "›_"; icon.setAttribute("aria-hidden", "true");
+      lane.append(icon, label, status, track);
+    } else lane.append(dot, label, status, track);
+    lanes.append(lane);
+    if (expanded) {
+      const detail = document.createElement("div"); detail.className = "progress-tool-detail";
+      detail.id = `progress-tool-detail-${index}-${tools.indexOf(row)}`;
+      const heading = document.createElement("strong"); heading.textContent = "Tool call";
+      const command = document.createElement("pre"); command.textContent = row.title;
+      detail.append(heading, command); lanes.append(detail);
+    }
+  }
+  appendLane(turnRow);
+  for (const group of progressGroups(snapshot)) {
+    const heading = document.createElement("div"); heading.className = "progress-step";
+    const caption = document.createElement("strong"); caption.textContent = group.step ? "Reasoning" : snapshot.steps.length ? "Before reasoning" : "Tools";
+    const summary = document.createElement("p"); summary.textContent = group.step ? timelineReasoningText(group.step.text) : "No reasoning summary observed for these tools.";
+    heading.append(caption, summary); lanes.append(heading);
+    for (const tool of group.tools) appendLane(tool);
+  }
+  if (responseRow) appendLane(responseRow);
+  if (focusedTool) {
+    const nextFocus = [...lanes.querySelectorAll("[data-progress-tool-key]")].find((button) => button.dataset.progressToolKey === focusedTool);
+    nextFocus?.focus({ preventScroll: true });
+  }
+  const axis = panel.querySelector(".progress-axis"); axis.replaceChildren();
+  for (let i = 0; i <= 4; i += 1) {
+    const tick = document.createElement("span"); tick.textContent = formatTime(Math.round(seconds * i / 4)); axis.append(tick);
+  }
+  panel.querySelector(".progress-empty").hidden = tools.length > 0;
+}
+
+function closeProgressPanel() {
+  ui.liveProgressPanel.hidden = true;
+  ui.liveState.setAttribute("aria-expanded", "false");
+  ui.timelineButton.setAttribute("aria-expanded", "false");
+}
+
+function toggleProgressPanel() {
+  if (!state.currentId) return;
+  if (!ui.liveProgressPanel.hidden) return closeProgressPanel();
+  closeControlPopover(); commandPanel?.close();
+  ui.liveProgressPanel.hidden = false;
+  ui.liveState.setAttribute("aria-expanded", "true");
+  ui.timelineButton.setAttribute("aria-expanded", "true");
+  renderLiveProgress();
 }
 
 function renderAttachments() {
@@ -691,14 +1048,54 @@ async function addImageFiles(files) {
   renderAttachments();
 }
 
+function renderQueuedInputs() {
+  ui.followupQueue.replaceChildren();
+  ui.followupQueue.hidden = !state.queuedInputs.length;
+  if (!state.queuedInputs.length) return;
+  const heading = document.createElement("div"); heading.className = "queue-heading";
+  heading.textContent = `${state.queuedInputs.length} queued · ${state.running ? "runs after the current task" : "choose Send now to continue"}`;
+  ui.followupQueue.append(heading);
+  for (const input of state.queuedInputs) {
+    const card = document.createElement("div"); card.className = "queued-input";
+    const preview = document.createElement("span"); preview.className = "queued-input-text";
+    const imageCount = input.attachments?.length || 0;
+    preview.textContent = input.text || `${imageCount} attached image${imageCount === 1 ? "" : "s"}`;
+    if (input.text && imageCount) preview.textContent += ` · ${imageCount} image${imageCount === 1 ? "" : "s"}`;
+    preview.title = preview.textContent;
+    const actions = document.createElement("div"); actions.className = "queued-input-actions";
+    const steer = document.createElement("button"); steer.type = "button";
+    steer.textContent = state.running ? "Steer now" : "Send now";
+    steer.title = state.running ? "Redirect the active task with this message" : "Run this queued message now";
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×";
+    remove.setAttribute("aria-label", "Remove queued message");
+    const sendAction = async (action) => {
+      const sessionId = state.currentId;
+      steer.disabled = true; remove.disabled = true;
+      try {
+        await requestJson(`/api/sessions/${sessionId}/${action}`, { method: "POST", body: JSON.stringify({ inputId: input.inputId }) });
+      } catch (error) { showToast(error.message); }
+      finally { if (state.currentId === sessionId) renderQueuedInputs(); }
+    };
+    steer.addEventListener("click", () => { void sendAction("steer"); });
+    remove.addEventListener("click", () => { void sendAction("remove-queued"); });
+    actions.append(steer, remove); card.append(preview, actions); ui.followupQueue.append(card);
+  }
+}
+
 function renderTranscript() {
+  if (replayingHistory) return;
+  renderQueuedInputs();
+  renderApprovalPanel($("#approvalPanel"), state.entries, answerPermission, showToast);
+  const savedScroll = scrollFollow.beforeRender();
   ui.messages.replaceChildren();
   const visible = groupTranscriptEntries(state.entries, state.prefs.showThoughts);
-  ui.emptyState.hidden = visible.length > 0;
-  ui.messages.hidden = visible.length === 0;
+  const status = renderTaskStatus();
+  const showStatus = Boolean(state.currentId) && (state.running || status.kind === "approval" || status.kind === "error" || status.kind === "connecting");
+  ui.emptyState.hidden = visible.length > 0 || showStatus;
+  ui.messages.hidden = visible.length === 0 && !showStatus;
   for (const entry of visible) {
     if (entry.type === "message") {
-      const article = document.createElement("article"); article.className = `turn ${entry.role}`;
+      const article = document.createElement("article"); article.className = `turn ${entry.role}${entry.interim ? " interim" : ""}`;
       article.setAttribute("aria-label", entry.role === "user" ? "You" : brand().name);
       article.innerHTML = `<div class="turn-body"><div class="message-content">${renderMarkdown(entry.text)}</div></div>`;
       if (entry.images?.length) {
@@ -709,7 +1106,38 @@ function renderTranscript() {
         }
         article.querySelector(".turn-body").append(images);
       }
+      if (entry.interim) {
+        // Progress notes stay short; click to read one in full.
+        article.title = "Progress update · click to expand";
+        article.classList.toggle("expanded", state.expandedNotes.has(entry.id));
+        article.addEventListener("click", () => {
+          if (state.expandedNotes.has(entry.id)) state.expandedNotes.delete(entry.id); else state.expandedNotes.add(entry.id);
+          article.classList.toggle("expanded", state.expandedNotes.has(entry.id));
+        });
+      } else if (entry.text) {
+        const copy = document.createElement("button");
+        copy.type = "button"; copy.className = "message-copy";
+        copy.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="copy-glyph" x="8" y="8" width="12" height="12" rx="2"/><path class="copy-glyph" d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/><path class="copied-glyph" d="m5 12 4 4 10-10"/></svg>';
+        copy.title = "Copy message with formatting";
+        copy.setAttribute("aria-label", "Copy message with formatting");
+        copy.addEventListener("click", async () => {
+          try {
+            await copyMessage(entry.text);
+            copy.classList.add("copied");
+            copy.title = "Message copied";
+            copy.setAttribute("aria-label", "Message copied");
+          } catch { showToast("Could not copy message. Check clipboard access."); }
+        });
+        article.append(copy);
+      }
       ui.messages.append(article);
+    } else if (entry.type === "subagents") {
+      const swarmId = entry.swarm?.id;
+      ui.messages.append(renderSubagentGroup(entry, (item) => ({ open: state.openToolCalls.has(item.id),
+        onToggle: (open) => { if (open) state.openToolCalls.add(item.id); else state.openToolCalls.delete(item.id); } }),
+      // The discussion starts open; closing it is remembered like a card.
+      { open: !state.openToolCalls.has(`closed-${swarmId}`),
+        onToggle: (open) => { if (open) state.openToolCalls.delete(`closed-${swarmId}`); else state.openToolCalls.add(`closed-${swarmId}`); } }));
     } else if (entry.type === "activity") {
       const toolEntries = entry.entries.filter((item) => item.type === "tool");
       const runningCount = toolEntries.filter((item) => item.status === "pending" || item.status === "in_progress").length;
@@ -729,12 +1157,17 @@ function renderTranscript() {
       for (const item of entry.entries) {
         if (item.type === "thought") {
           const thought = document.createElement("div"); thought.className = "activity-thought";
-          thought.innerHTML = `<strong>Reasoning</strong><p>${escapeHtml(item.text)}</p>`;
+          thought.innerHTML = `<strong>Reasoning</strong><div class="activity-thought-content">${renderMarkdown(item.text)}</div>`;
           list.append(thought);
         } else {
-          const toolCard = document.createElement("div"); toolCard.className = "event-card";
+          const toolCard = document.createElement("details"); toolCard.className = "event-card";
+          toolCard.open = state.openToolCalls.has(item.id);
           const toolStatus = item.status === "pending" || item.status === "in_progress" ? "running" : item.status;
-          toolCard.innerHTML = `<div class="event-card-header"><span class="event-icon">${item.kind === "edit" ? "✎" : "›_"}</span><span class="event-title">${escapeHtml(item.title)}</span><span class="event-status ${escapeHtml(toolStatus)}">${escapeHtml(toolStatus)}</span></div><pre class="event-output">${escapeHtml(toolOutput(item))}</pre>`;
+          toolCard.innerHTML = `<summary class="event-card-header"><span class="event-icon">${item.kind === "edit" ? "✎" : "›_"}</span><span class="event-title">${escapeHtml(item.title)}</span><span class="event-status ${escapeHtml(toolStatus)}">${escapeHtml(toolStatus)}</span><span class="tool-chevron" aria-hidden="true">›</span></summary><pre class="event-output">${escapeHtml(toolOutput(item))}</pre>`;
+          toolCard.addEventListener("toggle", () => {
+            if (toolCard.open) state.openToolCalls.add(item.id);
+            else state.openToolCalls.delete(item.id);
+          });
           list.append(toolCard);
         }
       }
@@ -744,35 +1177,35 @@ function renderTranscript() {
         else state.openActivityGroups.delete(entry.id);
       });
       ui.messages.append(activity);
-    } else if (entry.type === "permission") {
-      const card = document.createElement("div"); card.className = "permission-card";
-      const request = entry.request; const options = request.options || request.permissionOptions || [];
-      card.innerHTML = `<strong>Permission needed</strong><p>${escapeHtml(request.toolCall?.title || request.title || `${brand().name} needs approval to continue.`)}</p><div class="permission-actions"></div>`;
-      const actions = card.querySelector(".permission-actions");
-      for (const option of options) {
-        const button = document.createElement("button"); button.textContent = option.name || option.label || option.optionId;
-        button.addEventListener("click", () => answerPermission(entry, option.optionId)); actions.append(button);
-      }
-      ui.messages.append(card);
+
     }
   }
-  if (state.running) {
-    const run = document.createElement("div"); run.className = "run-state"; run.innerHTML = `<i></i><span>${brand().name} is working</span>`; ui.messages.append(run);
+  if (showStatus) {
+    const run = document.createElement("div"); run.className = `run-state ${status.kind}`;
+    const icon = document.createElement("i"); icon.setAttribute("aria-hidden", "true");
+    const copy = document.createElement("span"); copy.textContent = status.label;
+    run.append(icon, copy);
+    if (status.detail) { const detail = document.createElement("small"); detail.textContent = status.detail; run.append(detail); }
+    ui.messages.append(run);
   }
   const sendButton = ui.composer.querySelector(".send-button");
   sendButton.textContent = "↑";
-  sendButton.setAttribute("aria-label", state.running ? "Send steering message" : "Send");
-  sendButton.title = state.running ? "Send a message to steer the active task" : "Send message";
+  sendButton.setAttribute("aria-label", state.running ? "Steer the running task" : "Send");
+  sendButton.title = state.running ? "Send to the running task now (Option+Enter queues it for after)" : "Send message";
   ui.stopTask.hidden = !state.running;
   updateSendAvailability();
-  requestAnimationFrame(() => { ui.conversation.scrollTop = ui.conversation.scrollHeight; });
+  renderLiveProgress();
+  scrollFollow.afterRender(savedScroll);
+  if (!scrollFollow.following && state.running) ui.jumpLatest.hidden = false;
 }
 
 async function answerPermission(entry, optionId) {
-  try {
-    await requestJson(`/api/sessions/${state.currentId}/permission`, { method: "POST", body: JSON.stringify({ requestId: entry.requestId, optionId }) });
-    state.entries = state.entries.filter((item) => item !== entry); renderTranscript();
-  } catch (error) { showToast(error.message); }
+  const sessionId = state.currentId;
+  await requestJson(`/api/sessions/${sessionId}/permission`, { method: "POST", body: JSON.stringify({ requestId: entry.requestId, optionId }) });
+  if (state.currentId === sessionId) {
+    state.entries = state.entries.filter((item) => item.requestId !== entry.requestId);
+    renderTranscript();
+  }
 }
 
 function config(idPart) { return state.configOptions.find((item) => item.id === idPart || item.id?.includes(idPart)); }
@@ -788,9 +1221,11 @@ function modelControlLabel(option) {
 }
 function applyConfigLabels() {
   const model = config("model"), permission = config("permission"), thought = config("thought");
-  if (model) $("#modelLabel").textContent = modelControlLabel(model) || "Model";
-  if (permission) $("#permissionLabel").textContent = displayValue(permission) || "Workspace";
-  if (thought) $("#reasoningLabel").textContent = displayValue(thought) || "Medium";
+  $("#modelLabel").textContent = model ? modelControlLabel(model) || "Model" : "Loading model…";
+  $("#permissionLabel").textContent = permission ? displayValue(permission) || "Workspace" : "Workspace";
+  $("#reasoningLabel").textContent = thought ? displayValue(thought) || "High" : "Loading…";
+  $("#mobileModelLabel").textContent = $("#modelLabel").textContent;
+  $("#mobileReasoningLabel").textContent = $("#reasoningLabel").textContent;
 }
 
 function closeControlPopover() {
@@ -798,7 +1233,7 @@ function closeControlPopover() {
   ui.controlPopover.hidden = true;
   ui.controlPopover.replaceChildren();
   ui.controlPopover.style.removeProperty('left');
-  for (const id of ['modelControl', 'permissionControl', 'reasoningControl', 'usageControl']) {
+  for (const id of ['modelControl', 'permissionControl', 'reasoningControl', 'usageControl', 'mobileControls']) {
     document.getElementById(id).setAttribute('aria-expanded', 'false');
   }
   state.openControl = null;
@@ -811,6 +1246,7 @@ function showControlPopover(anchor, title, eyebrow) {
   popover.setAttribute('aria-label', title);
   state.openControl = anchor.id;
   anchor.setAttribute('aria-expanded', 'true');
+  if (window.matchMedia('(max-width: 760px)').matches) $('#mobileControls').setAttribute('aria-expanded', 'true');
   const heading = document.createElement('div'); heading.className = 'control-popover-heading';
   const copy = document.createElement('div');
   const label = document.createElement('span'); label.textContent = eyebrow;
@@ -826,8 +1262,35 @@ function showControlPopover(anchor, title, eyebrow) {
     const width = popover.getBoundingClientRect().width;
     const left = Math.max(0, Math.min(anchorRect.left - stripRect.left, ui.controlStrip.clientWidth - width));
     popover.style.left = `${left}px`;
+    if (window.matchMedia('(max-width: 760px)').matches && state.openControl === anchor.id) close.focus();
   });
   return popover;
+}
+
+function openMobileControls() {
+  const anchor = $('#mobileControls');
+  if (state.openControl) return closeControlPopover();
+  const popover = showControlPopover(anchor, 'Chat settings', 'THIS CHAT');
+  const list = document.createElement('div'); list.className = 'mobile-control-list';
+  for (const [id, name, valueId, icon] of [
+    ['modelControl', 'Model', 'modelLabel', '◉'],
+    ['reasoningControl', 'Reasoning', 'reasoningLabel', '◌'],
+    ['permissionControl', 'Permissions', 'permissionLabel', '◫'],
+    ['usageControl', 'Usage', 'usageLabel', '▤']
+  ]) {
+    const original = document.getElementById(id);
+    const button = document.createElement('button'); button.type = 'button';
+    button.disabled = original.disabled;
+    const symbol = document.createElement('span'); symbol.setAttribute('aria-hidden', 'true'); symbol.textContent = icon;
+    const copy = document.createElement('span');
+    const title = document.createElement('strong'); title.textContent = name;
+    const value = document.createElement('small'); value.textContent = document.getElementById(valueId).textContent;
+    const arrow = document.createElement('b'); arrow.setAttribute('aria-hidden', 'true'); arrow.textContent = '›';
+    copy.append(title, value); button.append(symbol, copy, arrow);
+    button.addEventListener('click', () => { closeControlPopover(); original.click(); });
+    list.append(button);
+  }
+  popover.append(list);
 }
 
 async function openPicker(configId, title, eyebrow, anchor) {
@@ -925,15 +1388,47 @@ async function openPicker(configId, title, eyebrow, anchor) {
   };
   search?.addEventListener('input', () => { list.scrollTop = 0; draw(); });
   draw();
+  if (isModelPicker && state.currentProvider === 'openai-codex') {
+    // Render cached options immediately, then discover additions without
+    // changing the selected model or closing the picker.
+    void requestJson(`/api/sessions/${pickerSessionId}/config`, {
+      method: 'POST', body: JSON.stringify({ configId: 'refresh_models', value: 'auto' })
+    }).then((result) => {
+      if (state.currentId !== pickerSessionId) return;
+      if (result.configOptions) state.configOptions = applyModelFavorites(result.configOptions, state.modelFavorites);
+      applyConfigLabels();
+      if (!popover.hidden && state.openControl === anchor.id) draw();
+    }).catch(() => { /* Keep the usable cached picker if discovery fails. */ });
+  }
   if (search) requestAnimationFrame(() => search.focus());
 }
 
 function openUsagePopover(anchor) {
   const popover = showControlPopover(anchor, 'Conversation usage', 'USAGE');
   const usage = state.usage;
+  const provider = state.currentProvider;
+  const quota = state.subscriptionUsage[provider];
+  const baseline = state.subscriptionBaseline?.provider === provider ? state.subscriptionBaseline : null;
+  const shortIncrease = subscriptionIncrease(baseline?.short, quota?.short);
+  const longIncrease = subscriptionIncrease(baseline?.long, quota?.long);
+  const subscribed = provider === 'claude-code' || provider === 'openai-codex';
+  const model = config('model')?.currentValue || state.sessions.find((item) => item.sessionId === state.currentId)?.currentModel;
+  const subagents = state.subagentUsage;
+  // The thread's API equivalent prices only its own model; subagents are listed separately.
+  const own = subagents ? Object.fromEntries(['inputTokens', 'outputTokens', 'cachedReadTokens', 'cachedWriteTokens']
+    .map((key) => [key, Math.max(0, (usage[key] || 0) - (subagents[key] || 0))])) : usage;
+  const equivalent = subscribed ? apiEquivalent(own, provider, model, state.usageReference) : null;
+  const cacheReadHeuristic = assumesCacheReadRate(own, provider, model, state.usageReference);
+  const subagentCharge = subagents?.apiResponses ? `${formatCost(subagents.apiCost)}${subagents.unpricedApiResponses ? ' (partial)' : ''}` : null;
+  const contextPercent = threadContextPercent(usage);
+  const trackingLabel = baseline?.origin === "first-observed" ? "Since first viewed" : "Since thread started";
   const cachedPercent = usage.inputTokens > 0 ? `${Math.round(100 * usage.cachedReadTokens / usage.inputTokens)}%` : '0%';
   const rows = [
-    ['Total cost', usage.costKnown ? formatCost(usage.costAmount) : usage.hasUsage ? 'Unavailable' : '$0.00'],
+    ['Actual charge', subscribed ? (subagentCharge ? `Plan + ${subagentCharge} API` : 'Included with plan')
+      : usage.costKnown ? formatCost(usage.costAmount) : usage.hasUsage ? 'Unavailable' : '$0.00'],
+    ...(subagents ? [['Subagents · API charges', subagentCharge || '$0.00'], ['Subagents · tokens', compactCount(subagents.tokens)]] : []),
+    ...(subscribed ? [[`API equivalent · thread${cacheReadHeuristic ? ' · 10% assumed cache rate' : ''}`, equivalent === null ? 'Unavailable' : formatEstimatedCost(equivalent)],
+      ['Thread context used', contextPercent === null ? 'Unavailable' : `${contextPercent}%`]] : []),
     ['Input tokens', compactCount(usage.inputTokens)],
     ['Output tokens', compactCount(usage.outputTokens)],
     ['Total tokens', compactCount(usage.inputTokens + usage.outputTokens)],
@@ -941,6 +1436,15 @@ function openUsagePopover(anchor) {
     ['Cache written', compactCount(usage.cachedWriteTokens)],
     ['Reasoning tokens', compactCount(usage.thoughtTokens)]
   ];
+  if (subscribed) {
+    rows.unshift(
+      ["Subscription · 5 hours", formatQuota(quota?.short)],
+      [`${trackingLabel} · 5h`, formatSubscriptionIncrease(shortIncrease)],
+      ["Subscription · 7 days", formatQuota(quota?.long)],
+      [`${trackingLabel} · 7d`, formatSubscriptionIncrease(longIncrease)]
+    );
+  }
+  const details = document.createElement('div'); details.className = 'usage-details';
   const grid = document.createElement('div'); grid.className = 'usage-stats';
   for (const [label, value] of rows) {
     const cell = document.createElement('div'); cell.className = 'usage-stat';
@@ -948,15 +1452,18 @@ function openUsagePopover(anchor) {
     const amount = document.createElement('strong'); amount.textContent = value;
     cell.append(name, amount); grid.append(cell);
   }
-  popover.append(grid);
+  details.append(grid);
   const context = document.createElement('p'); context.className = 'usage-context';
-  context.textContent = usage.size > 0
-    ? `Latest context: ${compactCount(usage.used)} / ${compactCount(usage.size)} tokens (${Math.round(100 * usage.used / usage.size)}%).`
+  context.textContent = contextPercent !== null
+    ? `Latest context: ${compactCount(usage.used)} / ${compactCount(usage.size)} tokens (${contextPercent}%).`
     : 'Context window details are not reported for this model.';
-  popover.append(context);
+  details.append(context);
   const note = document.createElement('p'); note.className = 'popover-hint usage-note';
-  note.textContent = 'Cached reads are included in input. Cost is shown only when the provider reports an actual charge.';
-  popover.append(note);
+  note.textContent = subscribed
+    ? `The percentage-point change is account-wide, not a measured per-thread share. New threads are snapshotted at creation; older threads start tracking on first view. Other chats/devices can affect it; delayed reports or a window reset cannot be reconstructed. Thread context % uses the latest request and a catalog reference window when available. API equivalent assumes ${model || 'the selected model'} throughout, text rates and 5-minute cache writes. For Codex models without bundled API rates, catalog input/output rates are used with an assumed cache-read rate of 10% of ordinary input. This is a heuristic, not a verified rate; other models can differ. Cache writes with unknown prices remain Unavailable. This is not a charge and may differ from direct API pricing. Unknown rates or context windows show Unavailable.`
+    : 'Cached reads are included in input. Cost is shown only when the provider reports an actual charge.';
+  details.append(note);
+  popover.append(details);
 }
 
 async function toggleModelFavorite(modelId, sessionId, redraw) {
@@ -972,11 +1479,13 @@ async function toggleModelFavorite(modelId, sessionId, redraw) {
 }
 
 async function updateConfig(configId, value) {
+  const sessionId = state.currentId;
   try {
-    const result = await requestJson(`/api/sessions/${state.currentId}/config`, { method: 'POST', body: JSON.stringify({ configId, value }) });
+    const result = await requestJson(`/api/sessions/${sessionId}/config`, { method: 'POST', body: JSON.stringify({ configId, value }) });
+    if (state.currentId !== sessionId) return;
     state.configOptions = result.configOptions || state.configOptions;
     const option = state.configOptions.find((item) => item.id === configId); if (option) option.currentValue = value;
-    applyConfigLabels(); closeControlPopover(); showToast('Task setting updated');
+    applyConfigLabels(); renderUsageLabel(); closeControlPopover(); showToast('Task setting updated');
   } catch (error) { showToast(error.message); }
 }
 
@@ -1025,6 +1534,8 @@ async function refresh() {
 function loadPrefs() {
   try { state.prefs = { ...state.prefs, ...JSON.parse(localStorage.getItem("unreal-console-prefs") || "{}") }; } catch {}
   if (!["system", "light", "dark", "warm"].includes(state.prefs.theme)) state.prefs.theme = "system";
+  if (!["auto", "cost", "subscription"].includes(state.prefs.usageMetric)) state.prefs.usageMetric = "auto";
+  renderUsageLabel();
   state.prefs.jambalayaMode = state.prefs.jambalayaMode === true;
   document.body.dataset.theme = state.prefs.theme; document.body.dataset.accent = state.prefs.accent;
   applyBranding();
@@ -1058,12 +1569,114 @@ function renderDefaultModel(form, saved = "") {
   form.elements.defaultModel.value = saved;
   form.elements.defaultProvider.disabled = !state.modelSettingsReady;
   form.elements.defaultModel.disabled = !state.modelSettingsReady;
+  form.elements.defaultThoughtLevel.disabled = !state.modelSettingsReady;
   $("#defaultModelHint").textContent = missing
     ? "Your saved model is no longer listed. Choose another model, or new chats will use the provider default."
     : provider?.local && !choices.length ? "Start the local server or add a model ID before starting a new chat." : "Existing chats keep their provider and model.";
 }
 
+let dashboardRequest = 0;
+function dashboardStat(label, value, exactTokens = null) {
+  const cell = document.createElement('div'); cell.className = 'usage-stat';
+  const caption = document.createElement('span'); caption.textContent = label;
+  const number = document.createElement('strong'); number.textContent = value;
+  if (exactTokens !== null) {
+    number.title = `${exactTokens.toLocaleString()} tokens`;
+    number.setAttribute('aria-label', number.title);
+  }
+  cell.append(caption, number); return cell;
+}
+function dashboardUsageTable(label, rows, subscribed) {
+  const wrapper = document.createElement('div'); wrapper.className = 'dashboard-table-wrap';
+  const table = document.createElement('table'); table.className = 'dashboard-table';
+  const caption = document.createElement('caption'); caption.className = 'sr-only'; caption.textContent = label;
+  const head = document.createElement('thead'), header = document.createElement('tr');
+  for (const column of [label, 'Total', 'Input', 'Output', 'Cached input', subscribed ? 'API equivalent' : 'API charge']) {
+    const th = document.createElement('th'); th.scope = 'col'; th.textContent = column; header.append(th);
+  }
+  head.append(header);
+  const body = document.createElement('tbody');
+  for (const [name, data] of rows) {
+    const row = document.createElement('tr');
+    const title = document.createElement('th'); title.scope = 'row'; title.textContent = name; row.append(title);
+    for (const field of ['tokens', 'inputTokens', 'outputTokens', 'cachedReadTokens']) {
+      const td = document.createElement('td');
+      const count = data[field] ?? 0;
+      td.textContent = formatDashboardTokens(count);
+      td.title = `${count.toLocaleString()} tokens`;
+      td.setAttribute('aria-label', td.title);
+      row.append(td);
+    }
+    const dollars = document.createElement('td');
+    dollars.textContent = formatEstimatedCost(data.dollars) + (data.unpricedTokens ? ' + unpriced' : '');
+    row.append(dollars); body.append(row);
+  }
+  table.append(caption, head, body); wrapper.append(table);
+  return wrapper;
+}
+function dashboardSection(title, data, subscribed) {
+  const card = document.createElement('article'); card.className = 'dashboard-card';
+  const heading = document.createElement('h4'); heading.textContent = title; card.append(heading);
+  const summary = document.createElement('div'); summary.className = 'usage-stats';
+  const tokenStat = (label, count) => dashboardStat(label, formatDashboardTokens(count), count);
+  summary.append(tokenStat('Recorded tokens · all time', data.allTime.tokens + data.earlierTokens),
+    tokenStat('Input tokens · all time', data.allTime.inputTokens + (data.earlierInputTokens ?? 0)),
+    tokenStat('Output tokens · all time', data.allTime.outputTokens + (data.earlierOutputTokens ?? 0)),
+    tokenStat('Cached input · all time', (data.allTime.cachedReadTokens ?? 0) + (data.earlierCachedReadTokens ?? 0)),
+    dashboardStat(subscribed ? 'API equivalent · priced usage' : 'Actual API charges · reported', formatEstimatedCost(data.allTime.dollars)));
+  card.append(summary);
+  const cacheNote = document.createElement('p'); cacheNote.className = 'theme-hint';
+  cacheNote.textContent = 'Totals include chat responses, subagents, generated titles and project memories. Each response counts under the provider that served it, so a Codex chat\'s OpenRouter subagents appear under API use. Cached input is included in input and total tokens, not added again.';
+  card.append(cacheNote);
+  if (data.earlierTokens) {
+    const note = document.createElement('p'); note.className = 'theme-hint';
+    note.textContent = `${formatDashboardTokens(data.earlierTokens)} earlier tokens have no response dates or reliable model/rate; excluded from periods and dollar totals.`;
+    card.append(note);
+  }
+  if (data.allTime.unpricedTokens) {
+    const note = document.createElement('p'); note.className = 'theme-hint';
+    note.textContent = `${formatDashboardTokens(data.allTime.unpricedTokens)} recorded tokens have no ${subscribed ? 'known model rate' : 'reported charge'}; dollar totals are partial.`;
+    card.append(note);
+  }
+  if (Object.keys(data.purposes || {}).length) {
+    const header = document.createElement('h5'); header.textContent = 'Inference purpose · all time'; card.append(header);
+    const labels = { main: 'Chat responses', title: 'Generated titles', memory: 'Project memory', synopsis: 'Session synopsis', subagent: 'Subagents' };
+    card.append(dashboardUsageTable('Purpose', Object.entries(data.purposes).map(([purpose, bucket]) =>
+      [labels[purpose] || purpose, bucket]), subscribed));
+  }
+  if (Object.keys(data.agents || {}).length) {
+    const header = document.createElement('h5'); header.textContent = 'Subagents · all time'; card.append(header);
+    card.append(dashboardUsageTable('Subagent', Object.entries(data.agents).sort(([, a], [, b]) => b.dollars - a.dollars || b.tokens - a.tokens)
+      .map(([agent, bucket]) => [agent.charAt(0).toUpperCase() + agent.slice(1), bucket]), subscribed));
+  }
+  for (const [label, column, periods] of [['Weekly', 'Week (UTC)', data.weeks], ['Monthly', 'Month (UTC)', data.months]]) {
+    const header = document.createElement('h5'); header.textContent = label; card.append(header);
+    card.append(dashboardUsageTable(column, periods.map((period) => [period.start, period]), subscribed));
+  }
+  const header = document.createElement('h5'); header.textContent = 'Models used · all time'; card.append(header);
+  if (!data.allTime.models.length) {
+    const empty = document.createElement('p'); empty.className = 'theme-hint'; empty.textContent = 'No dated responses yet.'; card.append(empty);
+  } else {
+    card.append(dashboardUsageTable('Model', data.allTime.models.map((model) =>
+      [`${model.provider} · ${model.model}`, model]), subscribed));
+  }
+  return card;
+}
+async function refreshDashboard() {
+  const request = ++dashboardRequest;
+  $('#dashboardStatus').textContent = 'Loading usage…';
+  try {
+    const data = await requestJson('/api/usage-dashboard');
+    if (request !== dashboardRequest || !ui.preferencesDialog.open) return;
+    $('#dashboardCards').replaceChildren(dashboardSection('Subscriptions · Claude & Codex', data.subscriptions, true),
+      dashboardSection('API use', data.api, false));
+    $('#dashboardStatus').textContent = 'Subscription dollars are indicative API equivalents, not charges. API dollars are provider-reported charges only. Local models are excluded. Only responses recorded after tracking began appear in weekly and monthly breakdowns.';
+  } catch {
+    if (request === dashboardRequest) $('#dashboardStatus').textContent = 'Usage could not be loaded. Reopen this tab to retry.';
+  }
+}
 function selectSettingsTab(name) {
+  if (name === 'dashboard') void refreshDashboard();
   document.querySelectorAll("[data-settings-tab]").forEach((tab) => {
     const selected = tab.dataset.settingsTab === name;
     tab.setAttribute("aria-selected", String(selected)); tab.tabIndex = selected ? 0 : -1;
@@ -1126,6 +1739,7 @@ function renderSettingsModels() {
     list.append(empty);
   }
   $("#localConnectionSummary").hidden = !provider?.local;
+  $("#openrouterKeyPanel").hidden = provider?.id !== "openrouter";
   $("#localConnectionAddress").textContent = provider?.local ? provider.baseUrl : "";
   $("#addLocalProvider").disabled = !state.modelSettingsReady;
   $("#modelCatalogCount").textContent = provider ? search ? `${models.length} of ${provider.models.length} models` : `${provider.models.length} available models` : "";
@@ -1136,18 +1750,20 @@ async function openPreferences() {
   if (ui.preferencesDialog.open) return;
   const loadId = ++state.preferencesLoadId, form = $("#preferencesForm");
   state.modelSettingsReady = false; state.catalogLoading = true; state.catalogError = "";
-  form.elements.defaultProvider.disabled = true; form.elements.defaultModel.disabled = true;
+  form.elements.defaultProvider.disabled = true; form.elements.defaultModel.disabled = true; form.elements.defaultThoughtLevel.disabled = true;
   form.elements.theme.value = state.prefs.theme; form.elements.accent.value = state.prefs.accent;
   form.elements.jambalayaMode.checked = state.prefs.jambalayaMode;
   form.elements.showThoughts.checked = state.prefs.showThoughts;
+  form.elements.usageMetric.value = state.prefs.usageMetric;
+  void refreshSettingsSubscriptionUsage(); void refreshOpenRouterKey();
   $("#modelSearch").value = ""; $("#savePreferences").disabled = true;
-  selectSettingsTab("models"); renderSettingsModels(); ui.preferencesDialog.showModal();
+  renderSettingsModels(); ui.preferencesDialog.showModal(); selectSettingsTab("dashboard");
   const results = await Promise.allSettled([
     requestJson("/api/capabilities"), requestJson("/api/generation-settings"),
-    requestJson("/api/default-model"), requestJson("/api/models")
+    requestJson("/api/default-model"), requestJson("/api/models"), requestJson("/api/agents")
   ]);
   if (loadId !== state.preferencesLoadId) return;
-  const [capabilities, generation, defaults, catalog] = results;
+  const [capabilities, generation, defaults, catalog, agents] = results;
   if (capabilities.status === "fulfilled") state.capabilities = capabilities.value.settings;
   if (generation.status === "fulfilled") {
     state.generation = generation.value.settings; state.generationModels = generation.value.models || [];
@@ -1166,7 +1782,19 @@ async function openPreferences() {
   form.elements.defaultProvider.value = providerId || "";
   state.catalogProvider = providerId;
   renderDefaultModel(form, preferred.model || ""); renderProviderTabs(); renderSettingsModels();
+  form.elements.defaultThoughtLevel.value = preferred.thoughtLevel || "high";
   $("#settingsModelList").scrollTop = 0;
+  const agentSettings = agents.status === "fulfilled" ? agents.value.settings : { enabled: false, maxConcurrent: 3, subagents: [] };
+  form.elements.agentsEnabled.checked = agentSettings.enabled;
+  form.elements.agentsMaxConcurrent.value = String(agentSettings.maxConcurrent);
+  form.elements.agentsDelegation.value = String(agentSettings.delegation || 3);
+  const swarm = agentSettings.swarm || {};
+  form.elements.swarmEnabled.checked = swarm.enabled === true;
+  form.elements.swarmUse.value = swarm.use || "asked";
+  form.elements.swarmSize.value = String(swarm.size || 4);
+  form.elements.swarmMessages.value = String(swarm.maxMessages || 60);
+  renderDelegationLevel();
+  renderSubagents($("#subagentList"), agentSettings.subagents, state.modelProviders, syncSubagentControls);
   form.elements.appleNotes.checked = state.capabilities.appleNotes;
   form.elements.appleCalendar.checked = state.capabilities.appleCalendar;
   for (const name of ["memoryModel", "titleModel"]) {
@@ -1284,10 +1912,169 @@ async function saveLocalConnection(event) {
   finally { setLocalProviderBusy(false); }
 }
 
+function syncSubagentControls() {
+  const cards = $("#subagentList").querySelectorAll(".subagent-card").length;
+  $("#addSubagentPresets").hidden = cards > 0;
+  $("#sameModelForAll").hidden = cards < 2;
+  $("#subagentList").dataset.empty = String(!cards);
+  syncAddSubagentMenu();
+  syncOpenRouterWarning();
+}
+
+// OpenRouter key: stored in the keychain by the server; the page only learns whether one exists.
+function renderOpenRouterKey() {
+  const configured = state.openRouterKey;
+  $("#openrouterKeyStatus").textContent = configured === null ? "Checking…" : configured ? "Saved" : "Not set up";
+  $("#removeOpenrouterKey").hidden = !configured;
+  $("#openrouterKeyInput").placeholder = configured ? "Paste a new key to replace the saved one" : "Paste your key (sk-or-…)";
+  syncOpenRouterWarning();
+}
+
+async function refreshOpenRouterKey() {
+  try { state.openRouterKey = (await requestJson("/api/openrouter-key")).configured; }
+  catch { state.openRouterKey = null; }
+  renderOpenRouterKey();
+}
+
+async function saveOpenRouterKey(remove = false) {
+  const input = $("#openrouterKeyInput");
+  if (!remove && !input.value.trim()) { input.focus(); return; }
+  $("#saveOpenrouterKey").disabled = $("#removeOpenrouterKey").disabled = true;
+  $("#openrouterKeyStatus").textContent = remove ? "Removing…" : "Checking the key with OpenRouter…";
+  try {
+    const result = remove ? await requestJson("/api/openrouter-key", { method: "DELETE" })
+      : await requestJson("/api/openrouter-key", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: input.value.trim() }) });
+    state.openRouterKey = result.configured; input.value = "";
+    renderOpenRouterKey();
+    showToast(remove ? "OpenRouter key removed" : result.verified ? "OpenRouter key saved and verified" : "OpenRouter key saved. It could not be checked right now.");
+  } catch (error) {
+    renderOpenRouterKey();
+    $("#openrouterKeyStatus").textContent = error.message;
+  } finally { $("#saveOpenrouterKey").disabled = $("#removeOpenrouterKey").disabled = false; }
+}
+
+function renderDelegationLevel() {
+  const level = delegationChoices.find((item) => item.level === Number($("#preferencesForm").elements.agentsDelegation.value)) || delegationChoices[2];
+  $("#delegationName").textContent = level.name;
+  $("#delegationDescription").textContent = level.description;
+}
+
+function syncOpenRouterWarning() {
+  const usesOpenRouter = $("#preferencesForm").elements.defaultProvider.value === "openrouter"
+    || collectSubagents($("#subagentList")).some((agent) => agent.provider === "openrouter");
+  $("#agentsOpenrouterWarning").hidden = !(usesOpenRouter && state.openRouterKey === false);
+}
+
+// One provider and model for every subagent, either for the cards already in the
+// list or for the five built-in subagents being added together.
+function openSubagentModelDialog(mode) {
+  const form = $("#subagentModelForm");
+  const primary = $("#preferencesForm").elements;
+  const current = mode === "apply" ? collectSubagents($("#subagentList"))[0] : null;
+  const provider = current?.provider || primary.defaultProvider.value;
+  const model = current ? current.model : primary.defaultModel.value;
+  form.dataset.mode = mode;
+  form.elements.provider.replaceChildren(...state.modelProviders.map((item) => new Option(item.name, item.id)));
+  form.elements.provider.value = provider;
+  const fillModels = (selected = "") => {
+    form.elements.model.replaceChildren(...modelChoices(state.modelProviders, form.elements.provider.value, selected).map((item) => new Option(item.name, item.value)));
+    form.elements.model.value = selected;
+  };
+  fillModels(model);
+  form.elements.provider.onchange = () => fillModels();
+  $("#subagentModelTitle").textContent = mode === "add" ? "Add the five built-in subagents" : "Use one model for all subagents";
+  $("#subagentModelNote").textContent = mode === "add"
+    ? "Pick the model all five will use. You can still change any of them afterwards."
+    : "Every subagent switches to this provider and model. Their reasoning and access stay as they are.";
+  $("#applySubagentModel").textContent = mode === "add" ? "Add five subagents" : "Apply to all";
+  $("#subagentModelDialog").showModal();
+}
+
+function syncAddSubagentMenu() {
+  const menu = $("#addSubagent");
+  const placeholder = new Option("＋ Add subagent", "", true, true);
+  placeholder.disabled = true; placeholder.hidden = true;
+  menu.replaceChildren(placeholder, ...addChoices(collectSubagents($("#subagentList"))).map((choice) => {
+    const item = new Option(choice.disabled ? `${choice.name} (added)` : choice.name, choice.value); item.disabled = Boolean(choice.disabled); return item;
+  }));
+}
+
+// New subagents start on the last subagent's provider and model, or the primary agent's.
+function addSubagentCards(agents, { keepModel = false } = {}) {
+  const form = $("#preferencesForm").elements;
+  const primary = { provider: form.defaultProvider.value, model: form.defaultModel.value };
+  let first;
+  for (const agent of agents) {
+    const ready = keepModel ? agent : inheritModel(agent, collectSubagents($("#subagentList")), primary);
+    const card = appendSubagent($("#subagentList"), ready, state.modelProviders, syncSubagentControls);
+    first ||= card;
+  }
+  first?.querySelector('[data-agent-field="name"]')?.focus();
+}
+
 function syncGenerationControls(form = $("#preferencesForm")) {
   form.elements.memoryModel.disabled = !form.elements.memoryEnabled.checked;
   form.elements.titleModel.disabled = !form.elements.titleEnabled.checked;
 }
+
+const sidebarResize = $("#sidebarResize");
+const sidebarWidthKey = "unreal-console-sidebar-width";
+let sidebarDrag = null;
+let preferredSidebarWidth = DEFAULT_SIDEBAR_WIDTH;
+try {
+  const saved = localStorage.getItem(sidebarWidthKey);
+  if (saved !== null && Number.isFinite(Number(saved))) {
+    preferredSidebarWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, Number(saved)));
+    ui.sidebar.style.setProperty("--sidebar-width", `${preferredSidebarWidth}px`);
+  }
+} catch { /* Private browsing may disallow storage. */ }
+function updateSidebarResizeValue() {
+  sidebarResize.setAttribute("aria-valuemax", String(sidebarWidthLimit(window.innerWidth)));
+  sidebarResize.setAttribute("aria-valuenow", String(clampSidebarWidth(preferredSidebarWidth, window.innerWidth)));
+}
+function setSidebarWidth(width, save = false) {
+  preferredSidebarWidth = clampSidebarWidth(width, window.innerWidth);
+  ui.sidebar.style.setProperty("--sidebar-width", `${preferredSidebarWidth}px`);
+  sidebarResize.setAttribute("aria-valuemax", String(sidebarWidthLimit(window.innerWidth)));
+  sidebarResize.setAttribute("aria-valuenow", String(preferredSidebarWidth));
+  if (save) {
+    try { localStorage.setItem(sidebarWidthKey, String(preferredSidebarWidth)); } catch {}
+  }
+}
+updateSidebarResizeValue();
+window.addEventListener("resize", updateSidebarResizeValue);
+sidebarResize.addEventListener("pointerdown", (event) => {
+  if (sidebarDrag || event.button !== 0 || window.innerWidth <= 760 || document.body.classList.contains("sidebar-collapsed")) return;
+  event.preventDefault();
+  sidebarDrag = { id: event.pointerId, x: event.clientX, width: ui.sidebar.getBoundingClientRect().width, previous: preferredSidebarWidth };
+  sidebarResize.setPointerCapture(event.pointerId);
+  document.body.classList.add("sidebar-resizing");
+});
+sidebarResize.addEventListener("pointermove", (event) => {
+  if (sidebarDrag?.id !== event.pointerId) return;
+  setSidebarWidth(sidebarDrag.width + event.clientX - sidebarDrag.x);
+});
+function endSidebarDrag(event, cancel = false) {
+  if (sidebarDrag?.id !== event.pointerId) return;
+  const previous = sidebarDrag.previous;
+  sidebarDrag = null;
+  document.body.classList.remove("sidebar-resizing");
+  if (cancel) setSidebarWidth(previous);
+  else setSidebarWidth(ui.sidebar.getBoundingClientRect().width, true);
+  if (sidebarResize.hasPointerCapture(event.pointerId)) sidebarResize.releasePointerCapture(event.pointerId);
+}
+sidebarResize.addEventListener("pointerup", (event) => endSidebarDrag(event));
+sidebarResize.addEventListener("pointercancel", (event) => endSidebarDrag(event, true));
+sidebarResize.addEventListener("lostpointercapture", (event) => endSidebarDrag(event, true));
+sidebarResize.addEventListener("keydown", (event) => {
+  if (document.body.classList.contains("sidebar-collapsed")) return;
+  const width = clampSidebarWidth(preferredSidebarWidth, window.innerWidth);
+  const step = event.shiftKey ? 30 : 10;
+  const next = { ArrowLeft: width - step, ArrowRight: width + step, Home: MIN_SIDEBAR_WIDTH, End: sidebarWidthLimit(window.innerWidth) }[event.key];
+  if (next === undefined) return;
+  event.preventDefault();
+  setSidebarWidth(next, true);
+});
 
 $("#mobileMenu").addEventListener("click", () => ui.sidebar.classList.toggle("open"));
 $("#collapseSidebar").addEventListener("click", (event) => {
@@ -1323,7 +2110,7 @@ async function startNewChat(folderPath = state.currentProjectPath, { focus = tru
       savePendingDrafts();
     }
     state.currentProjectPath = project?.path || null;
-    selectSession(sessionId);
+    selectSession(sessionId, result.configOptions || []);
     if (focus) requestAnimationFrame(() => ui.prompt.focus());
     void refresh();
     return sessionId;
@@ -1367,7 +2154,7 @@ $("#projectForm").addEventListener("submit", async (event) => {
           $("#taskTitle").textContent = result.project.name;
           $("#taskPath").textContent = result.project.path;
           $("#welcomeTitle").textContent = result.project.name;
-          $("#welcomeCopy").textContent = "Type below to start a chat. Your conversations will stay grouped here and use this folder as their workspace.";
+          $("#welcomeCopy").hidden = true;
         }
       }
       ui.projectDialog.close(); renderSessions(); showToast("Project updated");
@@ -1409,6 +2196,7 @@ $("#localProviderForm").elements.localType.addEventListener("change", (event) =>
 $("#testLocalProvider").addEventListener("click", () => { void testLocalProvider(); });
 $("#localProviderForm").addEventListener("submit", saveLocalConnection);
 $("#closePreferences").addEventListener("click", () => ui.preferencesDialog.close());
+$("#cancelPreferences").addEventListener("click", () => ui.preferencesDialog.close());
 $("#modelSearch").addEventListener("input", () => { renderSettingsModels(); $("#settingsModelList").scrollTop = 0; });
 $("#preferencesForm").elements.defaultProvider.addEventListener("change", () => {
   const form = $("#preferencesForm");
@@ -1433,6 +2221,38 @@ for (const tablist of document.querySelectorAll(".settings-tabs, .provider-tabs"
     const id = tabs[next].id; tabs[next].click(); document.getElementById(id)?.focus();
   });
 }
+$("#addSubagent").addEventListener("focus", syncAddSubagentMenu);
+$("#addSubagent").addEventListener("change", (event) => {
+  const choice = event.target.value;
+  syncAddSubagentMenu();
+  if (choice === "blank") addSubagentCards([{ access: "read-only" }]);
+  else if (choice) addSubagentCards(subagentPresets().filter((preset) => preset.name === choice));
+});
+$("#addSubagentPresets").addEventListener("click", () => openSubagentModelDialog("add"));
+$("#sameModelForAll").addEventListener("click", () => openSubagentModelDialog("apply"));
+$("#preferencesForm").elements.agentsDelegation.addEventListener("input", renderDelegationLevel);
+$("#subagentModelForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const choice = { provider: form.elements.provider.value, model: form.elements.model.value };
+  if (form.dataset.mode === "add") addSubagentCards(subagentPresets().map((preset) => ({ ...preset, ...choice })), { keepModel: true });
+  else { applyModelToCards($("#subagentList"), choice.provider, choice.model); syncOpenRouterWarning(); }
+  $("#subagentModelDialog").close();
+});
+$("#closeSubagentModel").addEventListener("click", () => $("#subagentModelDialog").close());
+$("#cancelSubagentModel").addEventListener("click", () => $("#subagentModelDialog").close());
+$("#saveOpenrouterKey").addEventListener("click", () => { void saveOpenRouterKey(); });
+$("#removeOpenrouterKey").addEventListener("click", () => { void saveOpenRouterKey(true); });
+$("#openrouterKeyInput").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { event.preventDefault(); void saveOpenRouterKey(); }
+});
+$("#agentsAddOpenrouterKey").addEventListener("click", () => {
+  selectSettingsTab("models");
+  state.catalogProvider = "openrouter"; renderProviderTabs(); renderSettingsModels();
+  $("#openrouterKeyInput").focus();
+});
+$("#subagentList").addEventListener("change", (event) => { if (event.target.dataset.agentField === "provider") syncOpenRouterWarning(); });
+$("#preferencesForm").elements.defaultProvider.addEventListener("change", () => syncOpenRouterWarning());
 $("#preferencesForm").elements.memoryEnabled.addEventListener("change", () => syncGenerationControls());
 $("#preferencesForm").elements.titleEnabled.addEventListener("change", () => syncGenerationControls());
 $("#moreActions").addEventListener("click", async () => {
@@ -1451,40 +2271,71 @@ $("#preferencesForm").addEventListener("submit", async (event) => {
     theme: form.elements.theme.value,
     accent: form.elements.accent.value,
     showThoughts: form.elements.showThoughts.checked,
-    jambalayaMode: form.elements.jambalayaMode.checked
+    jambalayaMode: form.elements.jambalayaMode.checked,
+    usageMetric: form.elements.usageMetric.value
   };
   localStorage.setItem("unreal-console-prefs", JSON.stringify(state.prefs)); loadPrefs(); renderSessions(); renderTranscript();
   const currentSession = state.sessions.find((item) => item.sessionId === state.currentId);
   if (currentSession) ui.composerContext.textContent = `${basename(currentSession.cwd)} · ${displayModel(currentSession.currentModel)}`;
   try {
-    const [capabilities, , generation] = await Promise.all([
+    const [capabilities, , generation, agents] = await Promise.all([
       requestJson("/api/capabilities", { method: "PUT", body: JSON.stringify({
         appleNotes: form.elements.appleNotes.checked,
         appleCalendar: form.elements.appleCalendar.checked
       }) }),
-      requestJson("/api/default-model", { method: "PUT", body: JSON.stringify({ provider: form.elements.defaultProvider.value, model: form.elements.defaultModel.value }) }),
+      requestJson("/api/default-model", { method: "PUT", body: JSON.stringify({ provider: form.elements.defaultProvider.value,
+        model: form.elements.defaultModel.value, thoughtLevel: form.elements.defaultThoughtLevel.value }) }),
       requestJson("/api/generation-settings", { method: "PUT", body: JSON.stringify({
         memoryEnabled: form.elements.memoryEnabled.checked,
         memoryModel: form.elements.memoryModel.value,
         titleEnabled: form.elements.titleEnabled.checked,
         titleModel: form.elements.titleModel.value
+      }) }),
+      requestJson("/api/agents", { method: "PUT", body: JSON.stringify({
+        enabled: form.elements.agentsEnabled.checked,
+        maxConcurrent: Number(form.elements.agentsMaxConcurrent.value),
+        delegation: Number(form.elements.agentsDelegation.value),
+        swarm: { enabled: form.elements.swarmEnabled.checked, use: form.elements.swarmUse.value,
+          size: Number(form.elements.swarmSize.value), maxMessages: Number(form.elements.swarmMessages.value) },
+        subagents: collectSubagents($("#subagentList"))
       }) })
     ]);
     state.capabilities = capabilities.settings;
     state.generation = generation.settings;
+    renderSubagents($("#subagentList"), agents.settings.subagents, state.modelProviders, syncSubagentControls);
     ui.preferencesDialog.close();
     showToast("Preferences saved");
   } catch (error) { showToast(error.message); }
   finally { saveButton.disabled = false; saveButton.textContent = "Save preferences"; }
 });
 $("#modelControl").addEventListener("click", (event) => { void openPicker("model", "Choose a model", "MODEL", event.currentTarget); });
+$("#mobileControls").addEventListener("click", openMobileControls);
 $("#permissionControl").addEventListener("click", (event) => { void openPicker("permission", "Set permissions", "ACCESS", event.currentTarget); });
 $("#reasoningControl").addEventListener("click", (event) => { void openPicker("thought", "Reasoning effort", "THINKING", event.currentTarget); });
 $("#usageControl").addEventListener("click", (event) => {
   if (state.openControl === event.currentTarget.id) closeControlPopover();
-  else openUsagePopover(event.currentTarget);
+  else { openUsagePopover(event.currentTarget); void refreshSubscriptionUsage(state.currentProvider, { fresh: true });
+    if (state.currentId) void refreshThreadUsageDetails(state.currentId); }
+});
+ui.liveState.addEventListener("click", toggleProgressPanel);
+ui.timelineButton.addEventListener("click", toggleProgressPanel);
+commandPanel = setupRunCommand({
+  button: $("#commandButton"), panel: $("#commandPanel"), getSessionId: () => state.currentId, showToast,
+  onOpen: () => { closeProgressPanel(); closeControlPopover(); },
+  insertIntoMessage: (text) => {
+    ui.prompt.value = ui.prompt.value.trim() ? `${ui.prompt.value.replace(/\s+$/, "")}\n\n${text}` : text;
+    ui.prompt.dispatchEvent(new Event("input")); ui.prompt.focus();
+  }
+});
+commandPanel.sync();
+ui.liveProgressPanel.querySelector(".progress-turn-select").addEventListener("change", (event) => {
+  state.selectedProgressTurn = Number(event.target.value); renderLiveProgress();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !ui.liveProgressPanel.hidden) { closeProgressPanel(); ui.timelineButton.focus(); }
 });
 document.addEventListener("pointerdown", (event) => {
+  if (!ui.liveProgressPanel.hidden && !ui.liveProgressPanel.contains(event.target) && !ui.liveState.contains(event.target) && !ui.timelineButton.contains(event.target)) closeProgressPanel();
   if (state.openControl && !ui.controlStrip.contains(event.target)) closeControlPopover();
   if (ui.sidebar.classList.contains("open") && !ui.sidebar.contains(event.target) && !$("#mobileMenu").contains(event.target)) {
     ui.sidebar.classList.remove("open");
@@ -1492,15 +2343,18 @@ document.addEventListener("pointerdown", (event) => {
 });
 ui.composer.addEventListener("submit", async (event) => {
   event.preventDefault();
+  // Option/Alt+Enter holds a message until the running task ends; a plain send steers it.
+  const queueOnly = state.queueNext; state.queueNext = false;
   if (state.submitting || state.creatingChat) return;
   const text = ui.prompt.value.trim();
   const attachedImages = state.attachments.map((image) => ({ ...image }));
   const attachments = attachedImages.map(({ mimeType, data }) => ({ mimeType, data }));
   if (!text && !attachments.length) return;
-  state.submitting = true;
-  updateSendAvailability();
+  state.submitting = true; state.taskError = "";
+  renderTaskStatus(); updateSendAvailability();
   let sessionId = state.currentId;
   let localEntry;
+  let inputId;
   try {
     if (!sessionId) {
       if (!state.currentProjectPath) throw new Error("Add or select a project before starting a chat.");
@@ -1514,12 +2368,40 @@ ui.composer.addEventListener("submit", async (event) => {
     const connected = await state.configReady;
     if (state.currentId !== sessionId) return;
     if (connected === null || !state.ready) throw new Error("Could not connect to this chat. Your message is still here; try sending again.");
+    const folderApproval = folderApprovalReply(state.entries, text, attachments);
+    if (folderApproval) {
+      await requestJson(`/api/sessions/${sessionId}/permission`, { method: "POST", body: JSON.stringify({ requestId: folderApproval.requestId, optionId: "allow-folders" }) });
+      if (state.currentId === sessionId) {
+        state.entries = state.entries.filter(entry => entry.requestId !== folderApproval.requestId);
+        ui.prompt.value = ""; ui.prompt.style.height = "auto";
+        renderTranscript();
+        showToast("Folders approved; the agent will continue automatically.");
+      }
+      return;
+    }
     ui.prompt.value = ""; ui.prompt.style.height = "auto";
-    localEntry = messageEntry("user", `local-${Date.now()}`);
-    localEntry.text = text; localEntry.images = attachedImages.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
-    localEntry.localPending = true;
-    state.running = true; renderTranscript();
-    await requestJson(`/api/sessions/${sessionId}/prompt`, { method: "POST", body: JSON.stringify({ text, attachments }) });
+    scrollFollow.follow();
+    const wasRunning = state.running;
+    if (!wasRunning || !queueOnly) {
+      localEntry = messageEntry("user", `local-${Date.now()}`);
+      localEntry.text = text; localEntry.images = attachedImages.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
+      localEntry.localPending = true;
+      state.running = true;
+    }
+    renderTranscript();
+    inputId = recoverInputId(sessionId, text, attachments);
+    const accepted = await requestJson(`/api/sessions/${sessionId}/prompt`, { method: "POST", body: JSON.stringify({ text, attachments, inputId, delivery: wasRunning ? (queueOnly ? "queue" : "steer") : "auto" }) });
+    if (state.currentId === sessionId && accepted?.delivery === "queued" && localEntry) {
+      state.entries = state.entries.filter(entry => entry !== localEntry);
+      state.byMessage.delete(localEntry.id);
+      state.running = state.promptRequests > 0;
+      renderTranscript();
+    }
+    if (state.currentId === sessionId && accepted?.delivery === "steered" && localEntry) {
+      localEntry.localPending = false;
+      renderTranscript();
+    }
+    finishInputId(inputId);
     if (state.currentId === sessionId) { state.attachments = []; renderAttachments(); }
   } catch (error) {
     if (state.currentId === sessionId) {
@@ -1527,22 +2409,28 @@ ui.composer.addEventListener("submit", async (event) => {
         state.entries = state.entries.filter((entry) => entry !== localEntry);
         state.byMessage.delete(localEntry.id);
       }
-      state.running = state.promptRequests > 0; ui.prompt.value = text;
+      state.running = state.promptRequests > 0;
+      if (!state.running && state.liveProgress?.endedAt === null) {
+        state.progressTurns = state.progressTurns.filter((turn) => turn !== state.liveProgress);
+        state.liveProgress = state.progressTurns.at(-1) || null;
+      }
+      ui.prompt.value = text;
+      if (state.ready) state.taskError = error.message;
       state.attachments = attachedImages; renderAttachments(); renderTranscript();
     }
     showToast(error.message);
   } finally {
     state.submitting = false;
-    updateSendAvailability();
+    renderTaskStatus(); updateSendAvailability();
   }
 });
 ui.stopTask.addEventListener("click", async () => {
   if (!state.currentId || !state.running) return;
-  ui.stopTask.disabled = true;
+  ui.stopTask.disabled = true; state.stopping = true; renderTranscript();
   try {
     await requestJson(`/api/sessions/${state.currentId}/cancel`, { method: "POST", body: "{}" });
     showToast("Stopping the current task");
-  } catch (error) { showToast(error.message); }
+  } catch (error) { state.stopping = false; showToast(error.message); renderTranscript(); }
   finally { ui.stopTask.disabled = false; }
 });
 ui.prompt.addEventListener("input", () => {
@@ -1570,10 +2458,28 @@ ui.prompt.addEventListener("paste", (event) => {
   const images = [...(event.clipboardData?.items || [])].filter((item) => item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
   if (images.length) { event.preventDefault(); void addImageFiles(images); }
 });
-ui.prompt.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); ui.composer.requestSubmit(); } });
+setupKeyboardDismissal(ui.prompt, $("#hideKeyboard"));
+ui.prompt.addEventListener("keydown", (event) => {
+  // Let the on-screen keyboard insert a newline; the send button submits on touch devices.
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
+    event.preventDefault(); state.queueNext = event.altKey && state.running; ui.composer.requestSubmit();
+  }
+});
+$("#openChatSearch").addEventListener("click", openChatSearch);
+$("#closeChatSearch").addEventListener("click", closeChatSearch);
+ui.chatSearchDialog.addEventListener("close", () => {
+  clearTimeout(chatSearchTimer); ++chatSearchRequest; chatSearchController?.abort();
+});
+ui.chatSearchInput.addEventListener("input", () => {
+  clearTimeout(chatSearchTimer); ++chatSearchRequest; chatSearchController?.abort();
+  ui.chatSearchResults.replaceChildren();
+  ui.chatSearchStatus.textContent = ui.chatSearchInput.value.trim() ? "Searching…" : "Type to search your chats.";
+  chatSearchTimer = setTimeout(runChatSearch, 250);
+});
 document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f") { event.preventDefault(); openChatSearch(); }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); $("#newThread").click(); }
-  if (event.key === "Escape") { closeControlPopover(); ui.sidebar.classList.remove("open"); }
+  if (event.key === "Escape") { closeProgressPanel(); closeControlPopover(); ui.sidebar.classList.remove("open"); }
 });
 
 function registerWebMcpTools() {
@@ -1607,13 +2513,14 @@ function registerWebMcpTools() {
     async execute(input) {
       if (!state.currentId) throw new Error("Open a task first.");
       const text = String(input?.text || "").trim(); if (!text) throw new Error("Prompt cannot be empty.");
-      await requestJson(`/api/sessions/${state.currentId}/prompt`, { method: "POST", body: JSON.stringify({ text }) });
+      await requestJson(`/api/sessions/${state.currentId}/prompt`, { method: "POST", body: JSON.stringify({ text, inputId: newInputId() }) });
       return { accepted: true, sessionId: state.currentId };
     }
   });
 }
 
-loadPrefs(); loadPendingDrafts(); loadExpandedProjects(); loadSidebarOrder(); registerWebMcpTools(); refresh(); setInterval(refresh, 15000);
+loadPrefs(); loadPendingDrafts(); loadExpandedProjects(); loadSidebarOrder(); registerWebMcpTools(); refresh(); setInterval(refresh, 15000); setInterval(() => { if (state.currentId) void refreshSubscriptionUsage(state.currentProvider); }, 60_000);
+setInterval(() => { if (ui.preferencesDialog.open && $("#dashboardTab").getAttribute("aria-selected") === "true") void refreshDashboard(); }, 30_000);
 
 function compactCount(value) {
   const count = Number.isSafeInteger(value) && value >= 0 ? value : 0;
@@ -1627,15 +2534,74 @@ function formatCost(value) {
   return `$${value.toFixed(2)}`;
 }
 
+function formatEstimatedCost(value) {
+  return `$${value.toFixed(value > 0 && value < 0.01 ? 4 : 2)}`;
+}
+
+function formatSubscriptionIncrease(value) {
+  return value === null ? "Unavailable" : `+${Number(value.toFixed(1))} pp`;
+}
+
+function formatQuota(window) {
+  if (!Number.isFinite(window?.percent)) return "Unavailable";
+  const reset = window.resetsAt && !Number.isNaN(Date.parse(window.resetsAt))
+    ? ` · resets ${new Date(window.resetsAt).toLocaleString()}` : "";
+  return `${Math.round(window.percent)}% used${reset}`;
+}
+
+function subscriptionProvider() {
+  return ["claude-code", "openai-codex"].includes(state.currentProvider) ? state.currentProvider : null;
+}
+
 function renderUsageLabel() {
   const usage = state.usage;
+  const provider = subscriptionProvider();
+  const subscribed = provider && state.prefs.usageMetric !== "cost";
   const amount = usage.costKnown ? formatCost(usage.costAmount) : usage.hasUsage ? "Unavailable" : "$0.00";
-  const tokens = usage.inputTokens + usage.outputTokens;
-  $("#usageLabel").textContent = amount;
-  $("#usageControl").title = `Usage: ${amount}; ${compactCount(tokens)} input and output tokens`;
+  const quota = state.subscriptionUsage[provider];
+  const label = subscribed ? (Number.isFinite(quota?.short?.percent) ? `${Math.round(quota.short.percent)}%` : "Unavailable") : amount;
+  $("#usageMetricName").textContent = subscribed ? "Sub usage" : "Usage";
+  $("#usageLabel").textContent = label;
+  $("#usageControl").title = subscribed ? `${provider === "claude-code" ? "Claude" : "Codex"} subscription: ${formatQuota(quota?.short)} (5-hour window)`
+    : `Usage: ${amount}; ${compactCount(usage.inputTokens + usage.outputTokens)} input and output tokens`;
+  if (subscribed && state.subagentUsage?.apiResponses) $("#usageControl").title += `; subagent API charges ${formatCost(state.subagentUsage.apiCost)}`;
+}
+
+async function refreshSubscriptionUsage(provider, { fresh = false } = {}) {
+  if (!["claude-code", "openai-codex"].includes(provider)) return;
+  const request = ++state.subscriptionRequest;
+  try {
+    const quota = await requestJson(`/api/subscription-usage?provider=${encodeURIComponent(provider)}${fresh ? "&fresh=1" : ""}`);
+    state.subscriptionUsage[provider] = quota;
+    if (request === state.subscriptionRequest && state.currentProvider === provider) {
+      renderUsageLabel();
+      if (state.openControl === "usageControl") openUsagePopover($("#usageControl"));
+    }
+    renderSettingsSubscriptionUsage();
+  } catch { /* The cost and token metrics remain available offline. */ }
+}
+
+function renderSettingsSubscriptionUsage() {
+  const container = $("#subscriptionSettings");
+  if (!container) return;
+  container.replaceChildren();
+  for (const [provider, name] of [["openai-codex", "Codex"], ["claude-code", "Claude"]]) {
+    const cell = document.createElement("div"); cell.className = "usage-stat";
+    const label = document.createElement("span"); label.textContent = `${name} · 5 hours / 7 days`;
+    const value = document.createElement("strong");
+    const quota = state.subscriptionUsage[provider];
+    value.textContent = `${formatQuota(quota?.short)} / ${formatQuota(quota?.long)}`;
+    cell.append(label, value); container.append(cell);
+  }
+}
+
+async function refreshSettingsSubscriptionUsage() {
+  renderSettingsSubscriptionUsage();
+  await Promise.all(["openai-codex", "claude-code"].map((provider) => refreshSubscriptionUsage(provider)));
 }
 
 function resetUsage(current = {}) {
+  state.subagentUsage = null;
   const cost = current.costAmount ?? current.cost?.amount;
   state.usage = {
     inputTokens: Number.isSafeInteger(current.inputTokens) ? current.inputTokens : 0,
@@ -1662,9 +2628,11 @@ function updateUsage(update) {
   if (Number.isFinite(cost)) { usage.costAmount = cost; usage.costKnown = true; }
   else if (Object.hasOwn(update, "cost") && update.cost === null) { usage.costAmount = null; usage.costKnown = false; }
   if (Number.isFinite(update.used)) usage.used = update.used;
-  if (Number.isFinite(update.size)) usage.size = update.size;
+  if (Number.isFinite(update.size) && update.size > 0) usage.size = update.size;
+  else if (state.usageReference?.contextWindow) usage.size = state.usageReference.contextWindow;
   usage.hasUsage ||= usage.inputTokens + usage.outputTokens > 0 || usage.costKnown;
   renderUsageLabel();
   if (state.openControl === "usageControl") openUsagePopover($("#usageControl"));
 
 }
+setInterval(() => { renderLiveProgress(); tickSubagentTimers(ui.messages); }, 1000);

@@ -3,6 +3,7 @@ set -euo pipefail
 
 readonly script_dir="$(cd "$(dirname "$0")" && pwd)"
 readonly app_dir="${1:-$HOME/Applications/Unreal Agent.app}"
+readonly project_dir="$(cd "$script_dir/.." && pwd)"
 readonly contents_dir="$app_dir/Contents"
 readonly executable_dir="$contents_dir/MacOS"
 readonly executable_path="$executable_dir/UnrealAgentCalendar"
@@ -11,6 +12,16 @@ readonly executable_path="$executable_dir/UnrealAgentCalendar"
 /bin/mkdir -p "$contents_dir/Resources"
 /bin/cp "$script_dir/../scripts/Launch Unreal Agent.command" "$contents_dir/Resources/Launch Unreal Agent.command"
 /bin/cp "$script_dir/calendar-helper/Info.plist" "$contents_dir/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable UnrealAgent" "$contents_dir/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :LSUIElement false" "$contents_dir/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string UnrealAgent.icns" "$contents_dir/Info.plist"
+/usr/bin/xcrun swift "$project_dir/distribution/packaging/generate-app-icon.swift" "$contents_dir/Resources/UnrealAgent.iconset"
+/usr/bin/iconutil -c icns "$contents_dir/Resources/UnrealAgent.iconset" -o "$contents_dir/Resources/UnrealAgent.icns"
+/bin/rm -r "$contents_dir/Resources/UnrealAgent.iconset"
+temp_dir="$(/usr/bin/mktemp -d)"
+trap '/bin/rm -rf "$temp_dir"' EXIT
+/bin/cp "$project_dir/scripts/DesktopLauncher.swift" "$temp_dir/main.swift"
+/usr/bin/xcrun swiftc -O -framework AppKit -framework WebKit "$temp_dir/main.swift" "$project_dir/distribution/packaging/AgentWindow.swift" -o "$executable_dir/UnrealAgent"
 /usr/bin/xcrun swiftc \
   -O \
   -framework AppKit \

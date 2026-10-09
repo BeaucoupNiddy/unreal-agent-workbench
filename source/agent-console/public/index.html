@@ -11,12 +11,13 @@
     <title>Unreal Agent</title>
     <link id="favicon" rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link id="manifest" rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=12" />
+    <link rel="stylesheet" href="/styles.css?v=29" />
   </head>
   <body data-theme="system" data-accent="lime" data-brand="default">
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
         <div class="window-drag"></div>
+        <div class="sidebar-resize" id="sidebarResize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" aria-controls="sidebar" aria-valuemin="220" aria-valuemax="560" aria-valuenow="276" tabindex="0" title="Drag to resize sidebar (arrow keys also work)"></div>
         <div class="brand-row">
           <a class="brand" id="brandHome" href="/" aria-label="Unreal Agent home">
             <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
@@ -30,7 +31,8 @@
           <button class="icon-button quiet" id="collapseSidebar" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">‹</button>
         </div>
 
-        <button class="new-thread" id="newThread" type="button" title="Start a one-off chat outside any project"><span>＋</span> New one-off chat <kbd>⌘ K</kbd></button>
+        <button class="new-thread" id="newThread" type="button" title="Start a new chat"><span>＋</span> New chat <kbd>⌘ K</kbd></button>
+        <button class="search-chats" id="openChatSearch" type="button" title="Search chats (⌘ ⇧ F)"><span aria-hidden="true">⌕</span> Search chats <kbd>⌘ ⇧ F</kbd></button>
         <button class="add-project" id="addProject" type="button"><span>▰</span> Add project</button>
 
         <div class="sidebar-section">
@@ -59,7 +61,33 @@
             </div>
           </div>
           <div class="topbar-actions">
-            <span class="live-state" id="liveState"><i></i><span>Connecting</span></span>
+            <button class="timeline-button" id="commandButton" type="button" aria-controls="commandPanel" aria-expanded="false" title="Run a shell command in this chat's folder" disabled>Terminal</button>
+            <section class="live-progress command-panel" id="commandPanel" aria-label="Run command" hidden>
+              <div class="progress-heading"><strong>Run command</strong><span class="command-mode"></span></div>
+              <form class="command-form">
+                <input class="command-input" type="text" aria-label="Command" placeholder="git status" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+                <button class="command-run" type="submit">Run</button>
+              </form>
+              <pre class="command-output" aria-label="Command output" aria-live="polite" hidden></pre>
+              <div class="command-footer"><small class="command-status"></small><button class="command-clear" type="button" disabled>Clear</button><button class="command-add" type="button" disabled>Add to message</button></div>
+              <small class="progress-note">Non-interactive: no prompts or full-screen programs. Stops after 10 minutes, or when this page disconnects. ↑/↓ recalls earlier commands.</small>
+            </section>
+            <button class="timeline-button" id="timelineButton" type="button" aria-controls="liveProgressPanel" aria-expanded="false" disabled>Timeline</button>
+            <button class="live-state" id="liveState" type="button" aria-controls="liveProgressPanel" aria-expanded="false" title="Agent progress" disabled><i aria-hidden="true"></i><span role="status" aria-live="polite" aria-atomic="true">Connecting</span><b aria-hidden="true">⌄</b></button>
+            <section class="live-progress" id="liveProgressPanel" aria-label="Turn timeline" hidden>
+              <div class="progress-heading"><strong>Turn timeline</strong><label for="progressTurnSelect">View</label><select class="progress-turn-select" id="progressTurnSelect" aria-label="Select turn"></select><span class="progress-clock"></span></div>
+              <p class="progress-no-turns" hidden>No timed turns recorded for this chat yet. Send a message from this Console to start the timeline.</p>
+              <div class="progress-board">
+                <div class="progress-card progress-primary">
+                  <div class="progress-card-head"><strong>Unreal Agent</strong><span class="progress-turn-label"></span><span class="progress-outcome"></span></div>
+                  <div class="progress-lanes"></div>
+                  <p class="progress-empty" hidden>No tool calls observed in this turn.</p>
+                  <div class="progress-axis" aria-hidden="true"></div>
+                </div>
+              </div>
+              <details class="progress-comparison"><summary>Other harness · not connected</summary><p>No comparison harness is connected. Only observed events appear in this timeline.</p></details>
+              <small class="progress-note">Times after send: a tool ends when its return arrives; Response marks the last assistant text after the last tool; Turn ends when the prompt result returns. Reasoning groups use observed summaries; older chats may lack them.</small>
+            </section>
             <button class="icon-button" id="moreActions" type="button" disabled aria-label="Open workspace in Zed" title="Open workspace in Zed">↗</button>
           </div>
         </header>
@@ -81,23 +109,28 @@
             </div>
           </div>
           <div class="messages" id="messages" hidden></div>
+          <button type="button" class="jump-latest" id="jumpLatest" hidden>↓ Latest</button>
         </section>
 
         <footer class="composer-wrap">
+          <section id="approvalPanel" class="approval-panel" aria-label="Pending approval requests" aria-live="polite" hidden></section>
           <div class="control-strip" id="controlStrip">
+            <button type="button" class="mobile-controls" id="mobileControls" aria-controls="controlPopover" aria-haspopup="true" aria-expanded="false" disabled><span class="mobile-controls-icon" aria-hidden="true">☷</span><span class="mobile-controls-copy"><strong>Chat settings</strong><span class="mobile-controls-values"><small id="mobileModelLabel">Model</small><span aria-hidden="true">·</span><small id="mobileReasoningLabel">Medium</small></span></span><b aria-hidden="true">⌄</b></button>
             <button type="button" id="modelControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span class="control-dot lime"></span><span id="modelLabel">Model</span><b>⌄</b></button>
-            <button type="button" id="permissionControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span>◫</span><span id="permissionLabel">Workspace</span><b>⌄</b></button>
             <button type="button" id="reasoningControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span>◌</span><span id="reasoningLabel">Medium</span><b>⌄</b></button>
-            <button type="button" class="usage-control" id="usageControl" aria-controls="controlPopover" aria-haspopup="true" aria-expanded="false" title="View token and cost usage" disabled><span>Usage</span><span class="usage-label" id="usageLabel">$0.00</span><b>⌄</b></button>
+            <button type="button" id="permissionControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span>◫</span><span id="permissionLabel">Workspace</span><b>⌄</b></button>
+            <button type="button" class="usage-control" id="usageControl" aria-controls="controlPopover" aria-haspopup="true" aria-expanded="false" title="View token and cost usage" disabled><span id="usageMetricName">Usage</span><span class="usage-label" id="usageLabel">$0.00</span><b>⌄</b></button>
             <div class="control-popover" id="controlPopover" role="region" hidden></div>
           </div>
+          <section class="followup-queue" id="followupQueue" aria-label="Queued messages" hidden></section>
           <form class="composer" id="composer">
             <div class="attachment-list" id="attachmentList" aria-live="polite" hidden></div>
-            <textarea id="prompt" rows="1" placeholder="Ask Unreal Agent anything" aria-label="Message Unreal Agent" disabled></textarea>
+            <textarea id="prompt" rows="1" enterkeyhint="enter" placeholder="Ask Unreal Agent anything" aria-label="Message Unreal Agent" disabled></textarea>
             <div class="composer-actions">
               <input id="imagePicker" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
               <button class="attach-button" id="attachImage" type="button" aria-label="Attach images" disabled title="Attach images">＋</button>
               <span class="composer-context" id="composerContext">Select a task to begin</span>
+              <button class="hide-keyboard-button" id="hideKeyboard" type="button" hidden aria-label="Hide keyboard" title="Hide keyboard without sending"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="12" rx="2"/><path d="M7 7h.01M11 7h.01M15 7h.01M17 7h.01M7 10h.01M11 10h.01M15 10h.01M17 10h.01M8 12h8M9 19l3 3 3-3"/></svg></button>
               <button class="stop-button" id="stopTask" type="button" aria-label="Stop task" title="Stop task" hidden>■</button>
               <button class="send-button" type="submit" aria-label="Send steering message" title="Send a message or steer the active task" disabled>↑</button>
             </div>
@@ -107,6 +140,14 @@
         </footer>
       </main>
     </div>
+    <dialog class="modal chat-search-modal" id="chatSearchDialog" aria-labelledby="chatSearchTitle">
+      <div class="modal-card">
+        <div class="modal-heading"><div><p>FIND A CONVERSATION</p><h2 id="chatSearchTitle">Search chats</h2></div><button type="button" id="closeChatSearch" aria-label="Close search">×</button></div>
+        <input id="chatSearchInput" type="search" maxlength="120" autocomplete="off" placeholder="Search titles and messages…" aria-label="Search chat titles and messages" />
+        <p class="chat-search-status" id="chatSearchStatus" role="status" aria-live="polite">Type to search your chats.</p>
+        <div class="chat-search-results" id="chatSearchResults" aria-label="Search results"></div>
+      </div>
+    </dialog>
     <dialog class="modal" id="projectDialog" aria-labelledby="projectDialogTitle">
       <form class="modal-card" id="projectForm">
         <div class="modal-heading"><div><p id="projectDialogEyebrow">NEW PROJECT</p><h2 id="projectDialogTitle">Add a project folder</h2></div><button type="button" id="closeProjectDialog" aria-label="Close">×</button></div>
@@ -135,21 +176,28 @@
       <form method="dialog" class="modal-card preferences-card" id="preferencesForm">
         <div class="modal-heading"><div><p>YOUR WORKSPACE</p><h2 id="preferencesTitle">Settings</h2></div><button type="button" id="closePreferences" aria-label="Close settings">×</button></div>
         <div class="settings-tabs" role="tablist" aria-label="Settings sections">
-          <button type="button" id="modelsTab" role="tab" aria-selected="true" aria-controls="modelsPanel" data-settings-tab="models">Providers &amp; models</button>
+          <button type="button" id="dashboardTab" role="tab" aria-selected="true" aria-controls="dashboardPanel" data-settings-tab="dashboard">Usage dashboard</button>
+          <button type="button" id="modelsTab" role="tab" aria-selected="false" aria-controls="modelsPanel" data-settings-tab="models" tabindex="-1">Providers &amp; models</button>
+          <button type="button" id="agentsTab" role="tab" aria-selected="false" aria-controls="agentsPanel" data-settings-tab="agents" tabindex="-1">Agents</button>
           <button type="button" id="generalTab" role="tab" aria-selected="false" aria-controls="generalPanel" data-settings-tab="general" tabindex="-1">General</button>
           <button type="button" id="capabilitiesTab" role="tab" aria-selected="false" aria-controls="capabilitiesPanel" data-settings-tab="capabilities" tabindex="-1">Capabilities</button>
         </div>
-        <section class="settings-panel models-panel" id="modelsPanel" role="tabpanel" aria-labelledby="modelsTab">
-          <div class="settings-section-heading"><h3>Defaults for new chats</h3></div>
-          <div class="model-defaults">
-            <label>Default provider<select name="defaultProvider" aria-label="Default provider" disabled></select></label>
-            <label>Default model<select name="defaultModel" aria-label="Default model for new chats" disabled></select></label>
-          </div>
-          <p class="theme-hint" id="defaultModelHint">Existing chats keep their provider and model.</p>
+        <section class="settings-panel" id="dashboardPanel" role="tabpanel" aria-labelledby="dashboardTab">
+          <div class="settings-section-heading"><h3>Usage dashboard</h3><p>Local response totals across saved chats · weeks start Monday (UTC).</p></div>
+          <p id="dashboardStatus" class="theme-hint" role="status" aria-live="polite">Open this tab to load usage.</p>
+          <div id="dashboardCards" class="dashboard-cards" aria-live="polite"></div>
+        </section>
+        <section class="settings-panel models-panel" id="modelsPanel" role="tabpanel" aria-labelledby="modelsTab" hidden>
+          <p class="theme-hint">Choose the primary agent for new chats in <strong>Agents</strong>. Use a model's <strong>Use as default</strong> button to make it the primary agent's model.</p>
           <div class="settings-section-heading catalog-heading"><h3>Model catalog</h3><button type="button" class="add-local-provider" id="addLocalProvider">＋ Add local models</button></div>
           <div class="provider-tabs" id="providerTabs" role="tablist" aria-label="Model providers"></div>
           <div class="provider-catalog" id="providerCatalog" role="tabpanel" aria-label="Available models">
             <div class="local-connection-summary" id="localConnectionSummary" hidden><span id="localConnectionAddress"></span><button type="button" id="editLocalProvider">Edit connection</button></div>
+            <div class="openrouter-key" id="openrouterKeyPanel" hidden>
+              <p class="openrouter-key-heading"><strong>OpenRouter API key</strong><span id="openrouterKeyStatus" role="status" aria-live="polite">Checking…</span></p>
+              <div class="openrouter-key-row"><input type="password" id="openrouterKeyInput" placeholder="Paste your key (sk-or-…)" autocomplete="new-password" aria-label="OpenRouter API key" /><button type="button" id="saveOpenrouterKey">Save key</button><button type="button" id="removeOpenrouterKey" hidden>Remove</button></div>
+              <p class="theme-hint">Saved in your Mac's keychain and checked with OpenRouter first. Create a key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a>.</p>
+            </div>
             <div class="catalog-toolbar">
               <label class="model-search"><span class="sr-only">Search available models</span><input type="search" id="modelSearch" placeholder="Search models by name or creator…" autocomplete="off" /></label>
               <button type="button" class="catalog-refresh" id="refreshModels" disabled><span aria-hidden="true">↻</span> Refresh</button>
@@ -160,11 +208,46 @@
             <div class="settings-model-list" id="settingsModelList" aria-label="Available models"><p class="catalog-empty">Loading model catalog…</p></div>
           </div>
         </section>
+        <section class="settings-panel agents-panel" id="agentsPanel" role="tabpanel" aria-labelledby="agentsTab" hidden>
+          <div class="settings-section-heading"><h3>Primary agent</h3><p>Runs every new chat and decides when to delegate.</p></div>
+          <div class="model-defaults primary-agent">
+            <label>Provider<select name="defaultProvider" aria-label="Primary agent provider" disabled></select></label>
+            <label>Model<select name="defaultModel" aria-label="Primary agent model" disabled></select></label>
+            <label>Reasoning<select name="defaultThoughtLevel" aria-label="Primary agent reasoning effort" disabled><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option><option value="max">Max</option></select></label>
+          </div>
+          <p class="theme-hint" id="defaultModelHint">Existing chats keep their provider and model.</p>
+          <div class="settings-section-heading catalog-heading"><h3>Subagents</h3><div class="subagent-actions"><button type="button" class="add-local-provider" id="addSubagentPresets">Add all five</button><button type="button" class="add-local-provider" id="sameModelForAll" hidden>Same model for all…</button><select class="add-local-provider subagent-add" id="addSubagent" aria-label="Add subagent"><option value="">＋ Add subagent</option></select></div></div>
+          <label class="switch-row"><span>Let the primary agent use subagents<small>It delegates self-contained tasks and reads back only each subagent's report</small></span><input type="checkbox" name="agentsEnabled" /></label>
+          <div class="delegation-setting">
+            <div class="delegation-heading"><span>How readily to delegate</span><strong id="delegationName">Balanced</strong></div>
+            <input type="range" name="agentsDelegation" min="1" max="5" step="1" value="3" list="delegationTicks" aria-label="How readily the primary agent delegates" aria-describedby="delegationDescription" />
+            <datalist id="delegationTicks"><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option></datalist>
+            <div class="delegation-scale" aria-hidden="true"><span>Primary does more</span><span>Subagents do more</span></div>
+            <p class="theme-hint" id="delegationDescription"></p>
+            <p class="theme-hint">Delegating more saves primary-model tokens only when your subagents run on cheaper models.</p>
+          </div>
+          <label class="setting-select"><span>Subagents running at once, per chat</span><select name="agentsMaxConcurrent" aria-label="Subagents running at once"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+          <fieldset class="swarm-setting"><legend>Swarms</legend>
+            <label class="switch-row"><span>Allow agent swarms<small>Several subagents work on one problem at once and message each other to share findings, challenge claims and agree on an answer. Costs several times a single subagent.</small></span><input type="checkbox" name="swarmEnabled" /></label>
+            <label class="setting-select"><span>When to use a swarm</span><select name="swarmUse" aria-label="When to use a swarm"><option value="asked">Only when I ask for one</option><option value="hard">When I ask, or on hard problems</option></select></label>
+            <label class="setting-select"><span>Agents per swarm, at most</span><select name="swarmSize" aria-label="Agents per swarm"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+            <label class="setting-select"><span>Messages per swarm, at most</span><select name="swarmMessages" aria-label="Messages per swarm"><option value="20">20</option><option value="40">40</option><option value="60">60</option><option value="100">100</option><option value="150">150</option></select></label>
+            <p class="theme-hint">Members are drawn from the subagents below and keep their models and access. Ask for one in a chat, for example "use a swarm to find the cause". When the message limit is reached, members stop talking and write their final reports.</p>
+          </fieldset>
+          <p class="openrouter-key-warning" id="agentsOpenrouterWarning" hidden>OpenRouter needs an API key before these agents can run. <button type="button" id="agentsAddOpenrouterKey">Add key</button></p>
+          <div class="subagent-list" id="subagentList" aria-label="Subagents"></div>
+          <p class="theme-hint" id="subagentHint">Subagents work in the chat's project with their own model and history. They never get more access than the chat: Read only subagents can't edit files, and editing subagents stay inside the workspace sandbox. Their usage counts toward the chat. Changes apply to the next delegation.</p>
+        </section>
         <section class="settings-panel" id="generalPanel" role="tabpanel" aria-labelledby="generalTab" hidden>
         <fieldset><legend>Theme</legend><div class="segmented theme-options"><label><input type="radio" name="theme" value="system" />System</label><label><input type="radio" name="theme" value="light" />Light</label><label><input type="radio" name="theme" value="dark" />Dark</label><label><input type="radio" name="theme" value="warm" />Warm</label></div><p class="theme-hint">System follows your Mac’s appearance automatically.</p></fieldset>
         <fieldset><legend>Accent</legend><div class="swatches"><label><input type="radio" name="accent" value="lime" /><i class="lime"></i>Lime</label><label><input type="radio" name="accent" value="blue" /><i class="blue"></i>Blue</label><label><input type="radio" name="accent" value="amber" /><i class="amber"></i>Amber</label></div></fieldset>
         <fieldset><legend>Identity</legend><label class="switch-row brand-switch"><span>Jambalaya Agent mode<small>Rename the assistant and season the interface with a warm, festive palette</small></span><input type="checkbox" name="jambalayaMode" /></label></fieldset>
         <fieldset><legend>Conversation</legend><label class="switch-row"><span>Show agent reasoning<small>Keep thought sections visible</small></span><input type="checkbox" name="showThoughts" /></label></fieldset>
+        <fieldset><legend>Usage metrics</legend>
+          <label class="setting-select"><span>Metric above chat</span><select name="usageMetric" aria-label="Usage metric above chat"><option value="auto">Automatic (subscription for Claude/Codex)</option><option value="subscription">Subscription usage</option><option value="cost">Conversation cost</option></select></label>
+          <p class="theme-hint">Subscription percentages are account-wide. The bar shows the five-hour window; open Usage for weekly usage and the change since this chat was created. That change can include other chats or devices, so it is only a thread estimate. Older chats without a starting snapshot begin tracking when first viewed.</p>
+          <div class="usage-stats" id="subscriptionSettings" aria-live="polite"></div>
+        </fieldset>
         <fieldset><legend>Background generation</legend>
           <label class="switch-row"><span>Project memory<small>Keep a compact summary available to other chats in the same project</small></span><input type="checkbox" name="memoryEnabled" /></label>
           <label class="setting-select"><span>Memory model</span><select name="memoryModel" aria-label="Memory model"></select></label>
@@ -180,7 +263,7 @@
           <p class="theme-hint">Capabilities are lazy and apply to new chats. macOS asks for Automation access the first time one runs.</p>
         </fieldset>
         </section>
-        <div class="modal-actions"><button class="primary" id="savePreferences" value="default">Save preferences</button></div>
+        <div class="modal-actions"><button type="button" id="cancelPreferences">Cancel</button><button class="primary" id="savePreferences" value="default">Save preferences</button></div>
       </form>
     </dialog>
     <dialog class="modal" id="localProviderDialog" aria-labelledby="localProviderTitle">
@@ -198,7 +281,16 @@
         <div class="modal-actions"><button type="button" id="cancelLocalProvider">Cancel</button><button class="primary" type="submit" id="saveLocalProvider">Add connection</button></div>
       </form>
     </dialog>
+    <dialog class="modal" id="subagentModelDialog" aria-labelledby="subagentModelTitle">
+      <form class="modal-card local-provider-form" id="subagentModelForm">
+        <div class="modal-heading"><div><p>SUBAGENTS</p><h2 id="subagentModelTitle">Use one model for all subagents</h2></div><button type="button" id="closeSubagentModel" aria-label="Close">×</button></div>
+        <p class="modal-note" id="subagentModelNote"></p>
+        <label>Provider<select name="provider" aria-label="Provider for all subagents"></select></label>
+        <label>Model<select name="model" aria-label="Model for all subagents"></select></label>
+        <div class="modal-actions"><button type="button" id="cancelSubagentModel">Cancel</button><button class="primary" type="submit" id="applySubagentModel">Apply to all</button></div>
+      </form>
+    </dialog>
     <div class="toast" id="toast" role="status" hidden></div>
-    <script type="module" src="/app.js?v=18"></script>
+    <script type="module" src="/app.js?v=40"></script>
   </body>
 </html>

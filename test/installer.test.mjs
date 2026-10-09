@@ -24,3 +24,11 @@ test('fresh and same-location installs pass, foreign agent registration fails',a
  const home=await fs.mkdtemp(path.join(tmpdir(),'unreal-install-test-'));const base='/Applications/Unreal Agent.app/Contents/Resources';
  try{assert.deepEqual(await preflight(home,base),{});await fs.mkdir(path.join(home,'.hydra-acp'));const config=path.join(home,'.hydra-acp/config.json');await fs.writeFile(config,JSON.stringify(mergeConfig({},base)));assert.equal((await preflight(home,base)).defaultAgent,'unreal');await fs.writeFile(config,JSON.stringify({agents:{unreal:{command:'/old/node',args:[]}}}));await assert.rejects(preflight(home,base),/another installation/);}finally{await fs.rm(home,{recursive:true,force:true});}
 });
+
+test('both services select the separately bundled live-input companion',()=>{
+ const base='/Applications/Unreal Agent.app/Contents/Resources';
+ for(const item of installPlan('/Users/Example',base)) {
+  assert.equal(item.value.EnvironmentVariables.UNREAL_AGENT_LIVE_RUNNER,base+'/runtime/bin/unreal-agent-live-runner');
+  assert.equal(item.value.EnvironmentVariables.UNREAL_AGENT_RUNNER,base+'/runtime/bin/unreal-agent-runner');
+ }
+});

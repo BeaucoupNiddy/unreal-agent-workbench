@@ -198,20 +198,29 @@ export class McpStdioClient {
     }
   }
 
-  request(method, params = {}) {
+  request(method, params = {}, { signal } = {}) {
+    if (signal?.aborted) return Promise.reject(new Error("External tool request was cancelled."));
     if (!this.child?.stdin?.writable) return Promise.reject(new Error(`MCP server ${this.config.name} is not running.`));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
+      const abort = () => {
+        try { this.notify("notifications/cancelled", { requestId: id, reason: "Task cancelled" }); } catch {}
+        this.pending.get(id)?.reject(new Error("External tool cancellation requested; the service may still complete work it already accepted."));
+      };
+      const cleanup = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); this.pending.delete(id); };
       const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`MCP server ${this.config.name} timed out handling ${method}.`));
+        try { this.notify("notifications/cancelled", { requestId: id, reason: "Request timed out" }); } catch {}
+        this.pending.get(id)?.reject(new Error(`MCP server ${this.config.name} timed out handling ${method}; cancellation was requested, but accepted external work may still finish.`));
       }, 60000);
       timer.unref();
       this.pending.set(id, {
-        resolve: (value) => { clearTimeout(timer); resolve(value); },
-        reject: (error) => { clearTimeout(timer); reject(error); }
+        resolve: (value) => { cleanup(); resolve(value); },
+        reject: (error) => { cleanup(); reject(error); }
       });
-      this.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) { abort(); return; }
+      try { this.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`); }
+      catch (error) { this.pending.get(id)?.reject(error); }
     });
   }
 
@@ -231,9 +240,9 @@ export class McpStdioClient {
     return this.toolsPromise;
   }
 
-  async call(name, args) {
+  async call(name, args, options = {}) {
     await this.start();
-    return this.request("tools/call", { name, arguments: args || {} });
+    return this.request("tools/call", { name, arguments: args || {} }, options);
   }
 
   close() {
@@ -244,13 +253,17 @@ export class McpStdioClient {
 }
 
 export class CapabilityBroker {
-  constructor({ socketPath, sessions, legacySocketDirectory, projectHistoryRoot, projectMemoryRoot, generationSettingsFile }) {
+  constructor({ socketPath, sessions, legacySocketDirectory, projectHistoryRoot, projectMemoryRoot, generationSettingsFile, requestFolderAccess, delegate, swarm, listAgents }) {
     this.socketPath = socketPath;
     this.sessions = sessions;
     this.legacySocketDirectory = legacySocketDirectory;
     this.projectHistoryRoot = projectHistoryRoot;
     this.projectMemoryRoot = projectMemoryRoot;
     this.generationSettingsFile = generationSettingsFile;
+    this.requestFolderAccess = requestFolderAccess;
+    this.delegate = delegate;
+    this.swarm = swarm;
+    this.listAgents = listAgents;
     this.server = null;
     this.clients = new Map();
     this.webCache = new Map();
@@ -353,23 +366,31 @@ export class CapabilityBroker {
   async requestToolPermission(session, server, tool, argumentsValue) {
     const approvalKey = `${server.name}/${tool.name}`;
     if (session.approvedCapabilities?.has(approvalKey)) return;
-    if (!session.activeClient) throw new Error("MCP tools can only run during an active Zed turn.");
+    if (!session.activeClient) throw new Error("Unreal tool approval is unavailable: open this chat in Unreal Agent Console or Zed, then ask to try again. The tool has not run; this is not a macOS privacy denial.");
     const toolCallId = `mcp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const response = await session.activeClient.request("session/request_permission", {
-      sessionId: session.id,
-      toolCall: {
-        toolCallId,
-        title: `Use ${server.name}: ${tool.name}`,
-        kind: "other",
-        status: "pending",
-        rawInput: argumentsValue || {}
-      },
-      options: [
-        { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
-        { optionId: "allow-always", name: "Allow for this session", kind: "allow_always" },
-        { optionId: "reject", name: "Reject", kind: "reject_once" }
-      ]
-    });
+    let response;
+    try {
+      response = await session.activeClient.request("session/request_permission", {
+        sessionId: session.id,
+        toolCall: {
+          toolCallId,
+          title: `Use ${server.name}: ${tool.name}`,
+          kind: "other",
+          status: "pending",
+          rawInput: argumentsValue || {}
+        },
+        options: [
+          { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+          { optionId: "allow-always", name: "Allow for this session", kind: "allow_always" },
+          { optionId: "reject", name: "Reject", kind: "reject_once" }
+        ]
+      });
+    } catch (error) {
+      if (/no clients attached|connection closed|request_permission.*timed out/i.test(error?.message || "")) {
+        throw new Error("Unreal tool approval could not reach a connected client. Reopen this chat in Unreal Agent Console or Zed, keep it connected, and ask to try again. The tool has not run; this is not a macOS Calendar/Notes permission failure. Do not reset macOS privacy permissions.", { cause: error });
+      }
+      throw error;
+    }
     const selected = response?.outcome?.optionId;
     if (response?.outcome?.outcome !== "selected" || !selected?.startsWith("allow")) throw new Error("The MCP tool call was not approved.");
     if (selected === "allow-always") {
@@ -379,13 +400,52 @@ export class CapabilityBroker {
   }
 
   async invokeTool(session, server, tool, argumentsValue, { skipPermission = false } = {}) {
+    if (session.activeTurn?.cancelled || session.cancelled) throw new Error("The task was cancelled; this tool has not run.");
+    if (session.permissionMode === "read-only" && tool.annotations?.readOnlyHint !== true && !["web_search", "web_fetch"].includes(tool.name)) {
+      throw new Error("Read-only mode blocks external tools without an explicit read-only declaration. Change Permissions to Workspace before using this tool.");
+    }
+    const generation = session.capabilityGeneration || 0;
     if (!skipPermission) await this.requestToolPermission(session, server, tool, argumentsValue);
-    return this.clientFor(session, server).call(tool.name, argumentsValue || {});
+    if (generation !== (session.capabilityGeneration || 0) || session.activeTurn?.cancelled || session.cancelled) throw new Error("The task was cancelled while awaiting approval; this tool has not run.");
+    const controller = new AbortController();
+    session.activeCapabilities ||= new Set();
+    const call = { controller, server: server.name, tool: tool.name };
+    session.activeCapabilities.add(call);
+    try {
+      return await this.clientFor(session, server).call(tool.name, argumentsValue || {}, { signal: controller.signal });
+    } finally { session.activeCapabilities.delete(call); }
   }
 
   async handle(request) {
     const session = this.sessions.get(request.sessionId);
     if (!session) throw new Error("Unknown capability session.");
+    if (session.isSubagent && ["request_write", "plan", "delegate", "agents", "swarm"].includes(request.action)) {
+      throw new Error(request.action === "request_write"
+        ? "Subagents cannot request folder access. Report the folder you need to the primary agent instead."
+        : "This capability is only available to the primary agent.");
+    }
+    if (request.action === "swarm") {
+      if (!this.swarm) throw new Error("Swarms are unavailable in this broker.");
+      return this.swarm(session, request);
+    }
+    if (request.action === "swarm_send" || request.action === "swarm_inbox") {
+      if (!session.swarm) throw new Error("Only swarm members can use swarm messages.");
+      return request.action === "swarm_send"
+        ? session.swarm.send(session.swarmMember, { to: request.to, message: request.message })
+        : session.swarm.drain(session.swarmMember);
+    }
+    if (request.action === "delegate") {
+      if (!this.delegate) throw new Error("Subagents are unavailable in this broker.");
+      return this.delegate(session, request);
+    }
+    if (request.action === "agents") {
+      if (!this.listAgents) throw new Error("Subagents are unavailable in this broker.");
+      return this.listAgents(session);
+    }
+    if (request.action === "request_write") {
+      if (!this.requestFolderAccess) throw new Error("Folder approval is unavailable in this broker.");
+      return this.requestFolderAccess(session, request);
+    }
     if (request.action === "plan") {
       if (!session.activeClient) throw new Error("Plans can only be updated during an active Zed turn.");
       const allowedStatuses = new Set(["pending", "in_progress", "completed"]);
@@ -402,7 +462,7 @@ export class CapabilityBroker {
       return { updated: entries.length };
     }
     if (request.action === "project_history") {
-      if (session.projectHistoryEnabled === false) throw new Error("Project history is unavailable for one-off chats.");
+      if (session.projectHistoryEnabled === false) throw new Error("Project history is unavailable for chats without a project.");
       if (this.generationSettingsFile) {
         const settings = await fs.readFile(this.generationSettingsFile, "utf8").then(JSON.parse).catch((error) => {
           if (error.code === "ENOENT") return null;
@@ -463,34 +523,43 @@ export class CapabilityBroker {
     if (request.action === "list") {
       const queryTerms = normalizeSearchText(request.query).split(/\s+/).filter(Boolean);
       const found = [];
-      for (let offset = 0; offset < servers.length; offset += maximumConcurrentServerListings) {
-        const batch = servers.slice(offset, offset + maximumConcurrentServerListings);
-        const catalogs = await Promise.all(batch.map(async (server) => ({
+      const query = normalizeSearchText(request.query);
+      const exact = servers.filter((server) => query === normalizeSearchText(server.name));
+      const named = exact.length ? exact : servers.filter((server) => query.startsWith(`${normalizeSearchText(server.name)} `));
+      const selected = named.length ? named : servers;
+      for (let offset = 0; offset < selected.length; offset += maximumConcurrentServerListings) {
+        const batch = selected.slice(offset, offset + maximumConcurrentServerListings);
+        const catalogs = await Promise.allSettled(batch.map(async (server) => ({
           server,
           tools: await this.clientFor(session, server).tools()
         })));
-        for (const { server, tools } of catalogs) {
+        for (const result of catalogs) {
+          if (result.status !== "fulfilled") continue;
+          const { server, tools } = result.value;
           for (const tool of tools) {
             const candidate = normalizeSearchText(`${server.name} ${tool.name} ${tool.description || ""}`);
             if (queryTerms.length && !queryTerms.every((term) => candidate.includes(term))) continue;
-            found.push({
+            const entry = {
               server: server.name,
               name: tool.name,
               description: String(tool.description || "").slice(0, 500),
-              inputSchema: tool.inputSchema
-            });
+              ...(Buffer.byteLength(JSON.stringify(tool.inputSchema || {})) < 3000 ? { inputSchema: tool.inputSchema } : { schemaAvailable: true, note: "Use unreal-capability schema <server> <tool> for the full schema." })
+            };
+            if (Buffer.byteLength(JSON.stringify([...found, entry])) > 16_000) return found;
+            found.push(entry);
             if (found.length >= 30) return found;
           }
         }
       }
       return found;
     }
-    if (request.action === "call") {
+    if (request.action === "call" || request.action === "schema") {
       const server = servers.find((candidate) => candidate.name === request.server);
       if (!server) throw new Error(`Unknown MCP server: ${request.server}`);
       const tools = await this.clientFor(session, server).tools();
       const tool = tools.find((candidate) => candidate.name === request.tool);
       if (!tool) throw new Error(`Unknown MCP tool: ${request.server}/${request.tool}`);
+      if (request.action === "schema") return { server: server.name, name: tool.name, inputSchema: tool.inputSchema };
       const result = await this.invokeTool(session, server, tool, request.arguments || {});
       if (tool.name === "web_search") return compactWebResult(result, { kind: "search" });
       if (tool.name === "web_fetch") return compactWebResult(result, { kind: "fetch", maxResults: 3, maxCharsPerResult: 5000 });
@@ -500,7 +569,18 @@ export class CapabilityBroker {
   }
 
   closeSession(session) {
-    // MCP processes are intentionally shared across sessions owned by this bridge.
+    this.cancelSession(session);
+    // Processes are shared, but their individual requests belong to a task.
+  }
+
+  cancelSession(session) {
+    session.capabilityGeneration = (session.capabilityGeneration || 0) + 1;
+    for (const call of session.activeCapabilities || []) {
+      call.controller.abort();
+      void Promise.resolve(session.activeClient?.notify?.("session/update", { sessionId: session.id, update: {
+        sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Cancellation requested for ${call.server}/${call.tool}. The external service may still finish work it already accepted; verify its result before retrying.` }
+      } })).catch(() => {});
+    }
   }
 
   async close() {
