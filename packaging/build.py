@@ -3,7 +3,7 @@
 import argparse, fcntl, hashlib, json, os, plistlib, shutil, subprocess, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-VERSION='1.0.4'
+VERSION='1.0.5'
 def run(*args, **kwargs):
     subprocess.run([str(x) for x in args],check=True,**kwargs)
 def sha(file):

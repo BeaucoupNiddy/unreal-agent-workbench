@@ -112,8 +112,43 @@ function setupSignIns(panel) {
   return { refresh: () => request("GET") };
 }
 
-export function setupBrowserPanel({ button, panel, getSessionId, isRunning, onOpen }) {
+// Full-size screenshot viewer. It stays inside the console, because a separate
+// image window has no way back in the installed app. The × button, Escape and
+// a click anywhere outside the picture all close it.
+export function setupLightbox(dialog) {
+  const image = dialog.querySelector("img");
+  const closeButton = dialog.querySelector(".browser-lightbox-close");
+  let returnFocus = null;
+  const isOpen = () => Boolean(dialog.open);
+  function close() { if (isOpen()) dialog.close(); }
+  closeButton.addEventListener("click", close);
+  // Outside the picture, the click lands on the dialog itself.
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault(); event.stopPropagation();
+    close();
+  });
+  dialog.addEventListener("close", () => {
+    image.removeAttribute("src");
+    const target = returnFocus; returnFocus = null;
+    target?.focus?.();
+  });
+  return {
+    isOpen, close,
+    open(src, alt = "", from = null) {
+      if (!src) return;
+      returnFocus = from;
+      image.src = src; image.alt = alt;
+      if (!isOpen()) dialog.showModal();
+      closeButton.focus();
+    }
+  };
+}
+
+export function setupBrowserPanel({ button, panel, getSessionId, isRunning, onOpen, lightbox = document.getElementById("browserLightbox") }) {
   const signIns = setupSignIns(panel);
+  const viewer = lightbox ? setupLightbox(lightbox) : null;
   const frame = panel.querySelector(".browser-frame");
   const image = panel.querySelector(".browser-frame img");
   const placeholder = panel.querySelector(".browser-frame-empty");
@@ -250,6 +285,7 @@ export function setupBrowserPanel({ button, panel, getSessionId, isRunning, onOp
     render(); schedule();
   }
   function close({ remember = true } = {}) {
+    viewer?.close();
     if (remember && sessionId && isOpen()) dismissed.add(sessionId);
     panel.hidden = true;
     button.setAttribute("aria-expanded", "false");
@@ -264,7 +300,9 @@ export function setupBrowserPanel({ button, panel, getSessionId, isRunning, onOp
   closeButton.addEventListener("click", () => { close(); button.focus(); });
   agentSelect.addEventListener("change", () => { selectedAgent = agentSelect.value; pinnedShot = null; renderFrame(); });
   backToLive.addEventListener("click", () => { pinnedShot = null; renderFrame(); });
-  image.addEventListener("click", () => { if (image.src) window.open(image.src, "_blank", "noopener"); });
+  const expand = () => { if (image.getAttribute("src")) viewer?.open(image.src, image.alt, image); };
+  image.addEventListener("click", expand);
+  image.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); expand(); } });
 
   return {
     close,

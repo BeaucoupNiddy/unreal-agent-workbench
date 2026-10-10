@@ -1,17 +1,10 @@
 {
-  "name": "Jambalaya Agent Console",
+  "name": "Jambalaya Agent Console — Extra Spicy Louisiana",
   "short_name": "Jambalaya Agent",
-  "description": "Use Jambalaya Agent securely from devices on your tailnet.",
+  "description": "Extra-spicy Louisiana: bayou skies, Mardi Gras brass, and a homegrown agent krewe. Securely use Jambalaya Agent on your tailnet.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#21120c",
-  "theme_color": "#fff3e0",
-  "icons": [
-    {
-      "src": "/favicon-jambalaya.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
-  ]
+  "background_color": "#101d19",
+  "theme_color": "#101d19",
+  "icons": [{ "src": "/favicon-jambalaya.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }

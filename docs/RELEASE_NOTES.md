@@ -1,3 +1,13 @@
+# Unreal Agent 1.0.5
+
+**Jambalaya mode:** Settings can switch the console to a Louisiana look, with its own name, icon, wording and a purple, green and gold Mardi Gras palette in light and dark. It adds bead strands, a turning second-line ring, fireflies over a moonlit bayou and colored starter cards. Animations stop when macOS Reduce Motion is on, and only the app's own labels change; your project names, chats and messages are left as they are.
+
+**Readable buttons:** Send, Allow and other primary buttons now pick a text color that contrasts with the accent color, so light themes no longer show dark text on a dark button.
+
+**Subagent savings:** the conversation usage popup estimates what subagents saved, comparing their tokens at the primary model's rate with what they cost on their own models. Assumed cache rates are marked.
+
+Also: the full-size browser screenshot opens in a viewer inside the console that closes with its × button, Escape or a click outside, instead of a window the app could not close. Paid-provider inference and a clean-account macOS installation were not exercised by the automated checks.
+
 # Unreal Agent 1.0.4
 
 **Agent browser:** chats, subagents and swarm members can open web pages, click and type, take screenshots, and read console errors and failed requests, each in its own clean browser context. An installed Chrome, Chromium, Edge or Brave is used when present; otherwise a headless browser is downloaded once on first use. Read-only chats can look at pages but not interact.

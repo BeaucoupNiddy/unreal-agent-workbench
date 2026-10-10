@@ -13,7 +13,7 @@ import { createScrollFollow } from "./scroll-follow.js";
 import { isDelegateCommand, isSubagentUpdate, renderSubagentGroup, tickSubagentTimers, upsertSubagent } from "./subagent-view.js";
 import { moveId, moveIdBy, orderedByIds } from "./sidebar-order.js";
 import { clampSidebarWidth, sidebarWidthLimit, DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH } from "./sidebar-width.js";
-import { apiEquivalent, assumesCacheReadRate, threadContextPercent } from "./usage-equivalent.js";
+import { apiEquivalent, assumesCacheReadRate, formatSubagentSavings, threadContextPercent } from "./usage-equivalent.js";
 import { formatDashboardTokens } from "./dashboard-format.js";
 import { subscriptionIncrease } from "./subscription-delta.js";
 import { RecentTranscripts } from "./recent-transcripts.js";
@@ -21,6 +21,7 @@ import { newInputId, recoverInputId, finishInputId } from "./input-recovery.js";
 import { setupRunCommand } from "./run-command.js";
 import { setupBrowserPanel } from "./browser-panel.js";
 import { addChoices, appendSubagent, applyModelToCards, collectSubagents, delegationChoices, inheritModel, modelChoices, renderSubagents, subagentPresets } from "./agents-settings.js";
+import { applyJambalayaCopy, themeText } from "./jambalaya-theme.js";
 
 const $ = (selector) => document.querySelector(selector);
 const PENDING_DRAFTS_KEY = "unreal-console-pending-drafts";
@@ -36,12 +37,12 @@ const BRANDING = {
   },
   jambalaya: {
     name: "Jambalaya Agent",
-    consoleLabel: "JAMBALAYA AGENT CONSOLE",
+    consoleLabel: "ACADIANA TO THE CRESCENT CITY · JAMBALAYA AGENT",
     favicon: "/favicon-jambalaya.svg",
     manifest: "/manifest-jambalaya.webmanifest",
     initials: "JA",
-    prompt: "Ask Jambalaya Agent anything",
-    footnote: "Jambalaya Agent runs locally. Review important changes before shipping."
+    prompt: "What’s cooking, cher? Bring a little Louisiana heat…",
+    footnote: "Homegrown on your Mac. Season boldly; review important changes before serving."
   }
 };
 const state = {
@@ -117,7 +118,9 @@ function applyBranding() {
   const current = brand();
   document.body.dataset.brand = state.prefs.jambalayaMode ? "jambalaya" : "default";
   document.title = current.name;
-  document.querySelector('meta[name="description"]').content = `A focused local console for ${current.name}.`;
+  document.querySelector('meta[name="description"]').content = state.prefs.jambalayaMode
+    ? "Extra-spicy Louisiana: a homegrown agent krewe, from Acadiana to the Crescent City."
+    : `A focused local console for ${current.name}.`;
   document.querySelector('meta[name="apple-mobile-web-app-title"]').content = current.name;
   $("#favicon").href = current.favicon;
   $("#manifest").href = current.manifest;
@@ -128,6 +131,34 @@ function applyBranding() {
   ui.prompt.placeholder = current.prompt;
   ui.prompt.setAttribute("aria-label", `Message ${current.name}`);
   updateThemeColor();
+  applyJambalayaCopy(state.prefs.jambalayaMode);
+  renderBrandContext();
+  renderTaskStatus();
+}
+// Update only app-owned empty-state copy. Never replace a project name, chat title,
+// draft, command, transcript, or an in-progress approval when changing identities.
+function louisiana(normal, spicy) { return themeText(normal, spicy, state.prefs.jambalayaMode); }
+function renderBrandContext() {
+  const project = projectViews().find((item) => item.path === state.currentProjectPath);
+  if (!state.currentId) {
+    ui.taskTitle.textContent = project?.name || louisiana("Select a project", "Choose a bayou camp");
+    ui.taskPath.textContent = project?.path || louisiana("Add a folder to organize your chats.", "Every good krewe needs a camp. Add a project folder.");
+    ui.composerContext.textContent = project
+      ? louisiana("Write a message to start a new chat", "Light the burner · Write a message to start a chat")
+      : louisiana("Select a task to begin", "Choose a camp before firing up the pot");
+    $("#welcomeTitle").innerHTML = project ? "" : louisiana("Your work,<br /><em>without the clutter.</em>", "A little lagniappe.<br /><em>A whole lot of fire.</em>");
+    if (project) $("#welcomeTitle").textContent = project.name;
+    $("#welcomeCopy").hidden = Boolean(project);
+    if (!project) $("#welcomeCopy").textContent = louisiana(
+      "Add a project folder to get started. Each project keeps its chats together.",
+      "From the bayous of Acadiana to the brass bands of New Orleans: pick a project camp, gather your krewe, and let’s cook up something good.");
+  }
+  const starter = $("#starterNewChat");
+  starter.querySelector("strong").textContent = louisiana("Start a chat", "Start a pot · New chat");
+  starter.querySelector("small").textContent = project
+    ? louisiana(`Work in ${project.name}`, `Cook up something in ${project.name}`)
+    : louisiana("Work in the selected project", "Pull up a chair at your camp");
+  ui.liveProgressPanel.querySelector(".progress-card-head strong").textContent = brand().name;
 }
 function relativeTime(value) {
   const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000));
@@ -149,7 +180,17 @@ function renderTaskStatus() {
   const status = currentTaskStatus();
   const label = ui.liveState.querySelector("span");
   ui.liveState.className = `live-state ${status.kind}`;
-  if (label.textContent !== status.label) label.textContent = status.label;
+  const statusCopy = {
+    "Hydra connected": "The bayou is connected", "Ready to start": "Roux ready · Start a chat",
+    "Ready for a message": "Roux ready · Send a message", "Opening chat…": "Lighting the burner · Opening chat…",
+    "Reconnecting…": "Back to the bayou · Reconnecting…", "Thinking through the request…": "Stirring the roux · Thinking…",
+    "Working on your request…": "On the boil · Working…", "Editing files": "Seasoning the source · Editing files",
+    "Running tests": "Taste-testing · Running tests", "Building project": "Firing up the kitchen · Building",
+    "Inspecting project": "Checking the pantry · Inspecting", "Searching for information": "Down the bayou · Searching",
+    "Running a tool": "Cast iron at work · Running a tool", "Writing a response…": "Plating it up · Writing a response…"
+  };
+  const displayLabel = state.prefs.jambalayaMode ? (statusCopy[status.label] || status.label) : status.label;
+  if (label.textContent !== displayLabel) label.textContent = displayLabel;
   ui.liveState.disabled = !state.progressTurns.length;
   ui.timelineButton.disabled = !state.currentId;
   commandPanel?.sync();
@@ -306,7 +347,7 @@ function selectProject(folderPath) {
   starter.querySelector("strong").textContent = "Start a chat";
   starter.querySelector("small").textContent = `Work in ${project.name}`;
   setConnection(state.ready, state.ready ? "Project selected" : "Hydra unavailable");
-  resetTranscript(); renderSessions();
+  resetTranscript(); renderSessions(); renderBrandContext();
 }
 
 function renderSessions() {
@@ -314,7 +355,7 @@ function renderSessions() {
   const projects = projectViews();
   ui.sessionCount.textContent = projects.length ? String(projects.length) : "";
   if (!projects.length && !state.sessions.length) {
-    const empty = document.createElement("p"); empty.className = "sidebar-empty"; empty.textContent = "Add a folder to create your first project";
+    const empty = document.createElement("p"); empty.className = "sidebar-empty"; empty.textContent = louisiana("Add a folder to create your first project", "First, plant your cypress: add a project camp for the krewe");
     ui.sessionList.append(empty); return;
   }
   const appendChat = (parent, item, groupKey, groupChats) => {
@@ -327,7 +368,7 @@ function renderSessions() {
     button.className = `session-item${item.sessionId === state.currentId ? " active" : ""}`;
     const indicator = document.createElement("span"); indicator.className = `session-state ${sessionState(item)}`;
     const details = document.createElement("span"); details.className = "session-copy";
-    const name = document.createElement("strong"); name.textContent = item.title || "Untitled chat";
+    const name = document.createElement("strong"); name.textContent = item.title || louisiana("Untitled chat", "A fresh pot · Untitled chat");
     const time = document.createElement("small"); time.textContent = relativeTime(item.updatedAt);
     button.title = `${item.title || "Untitled chat"} · ${displayModel(item.currentModel)}`;
     details.append(name, time); button.append(indicator, details);
@@ -380,7 +421,7 @@ function renderSessions() {
     const glyph = document.createElementNS("http://www.w3.org/2000/svg", "svg"); glyph.classList.add("project-glyph");
     glyph.setAttribute("viewBox", "0 0 24 24"); glyph.setAttribute("aria-hidden", "true"); glyph.setAttribute("focusable", "false");
     const folder = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    folder.setAttribute("d", "M3 7.5A1.5 1.5 0 0 1 4.5 6h4.4l2 2h8.6A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5Z");
+    folder.setAttribute("d", state.prefs.jambalayaMode ? "M12 2v20M12 5 8 3m4 6L5 6m7 8-8-3m8 7L3 15m9-8 5-4m-5 9 7-6m-7 11 8-5M5 22h14" : "M3 7.5A1.5 1.5 0 0 1 4.5 6h4.4l2 2h8.6A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5Z");
     glyph.append(folder);
     const copy = document.createElement("span"); copy.className = "project-copy";
     const title = document.createElement("strong"); title.textContent = project.name;
@@ -390,7 +431,7 @@ function renderSessions() {
     row.append(toggle, select);
 
     const addChat = document.createElement("button"); addChat.type = "button"; addChat.className = "project-add-chat";
-    addChat.textContent = "+"; addChat.title = `New chat in ${project.name}`; addChat.setAttribute("aria-label", addChat.title);
+    addChat.textContent = "+"; addChat.title = louisiana(`New chat in ${project.name}`, `Start a new pot · Chat in ${project.name}`); addChat.setAttribute("aria-label", addChat.title);
     addChat.addEventListener("click", () => { selectProject(project.path); void startNewChat(project.path); });
     row.append(addChat);
     const manage = document.createElement("button"); manage.type = "button"; manage.className = "project-manage";
@@ -400,7 +441,7 @@ function renderSessions() {
     if (expanded) {
       const chatsList = document.createElement("div"); chatsList.className = "project-chats";
       if (!chats.length) {
-        const none = document.createElement("p"); none.className = "project-no-chats"; none.textContent = "No chats yet"; chatsList.append(none);
+        const none = document.createElement("p"); none.className = "project-no-chats"; none.textContent = louisiana("No chats yet", "No pots on the stove yet · Start a chat"); chatsList.append(none);
       }
       for (const item of chats) appendChat(chatsList, item, groupKey, chats);
       group.append(chatsList);
@@ -411,7 +452,7 @@ function renderSessions() {
   const unassigned = orderedChats(state.sessions.filter((item) => !projectForSession(item)), "one-off");
   if (unassigned.length) {
     const group = document.createElement("section"); group.className = "project-group unassigned-group";
-    const heading = document.createElement("div"); heading.className = "unassigned-heading"; heading.textContent = "One-off chats";
+    const heading = document.createElement("div"); heading.className = "unassigned-heading"; heading.textContent = louisiana("One-off chats", "Dockside pots · One-off chats");
     group.append(heading);
     for (const item of unassigned) appendChat(group, item, "one-off", unassigned);
     ui.sessionList.append(group);
@@ -423,8 +464,8 @@ function openProjectDialog(project = null) {
   state.editingProjectId = project?.saved && project.id ? project.id : null;
   state.editingProjectPath = editing ? project.path : null;
   state.editingLegacyProject = Boolean(project && !project.saved);
-  $("#projectDialogEyebrow").textContent = editing ? "EDIT PROJECT" : "NEW PROJECT";
-  $("#projectDialogTitle").textContent = editing ? "Edit project" : "Add a project folder";
+  $("#projectDialogEyebrow").textContent = editing ? louisiana("EDIT PROJECT", "TEND YOUR CAMP") : louisiana("NEW PROJECT", "A NEW PATCH OF BAYOU");
+  $("#projectDialogTitle").textContent = editing ? louisiana("Edit project", "Tend the camp · Edit project") : louisiana("Add a project folder", "Set up camp · Add a project folder");
   $("#projectNameField").hidden = !editing;
   $("#projectPathField").hidden = false;
   $("#projectName").value = editing ? project.name : "";
@@ -438,7 +479,7 @@ function openProjectDialog(project = null) {
       ? "This workspace was discovered from existing chats. Saving it makes it a regular project that you can rename or remove later."
       : "New chats will use this folder. This does not move files or existing chats; they remain linked to their original folder."
     : "The folder is used as the workspace source for chats in this project. Existing chats in that folder will appear here too.";
-  $("#saveProject").textContent = editing ? "Save changes" : "Add project";
+  $("#saveProject").textContent = editing ? louisiana("Save changes", "Save the camp changes") : louisiana("Add project", "Set up camp · Add project");
   ui.projectDialog.showModal();
   setTimeout(() => (editing ? $("#projectName") : $("#projectPath")).focus(), 50);
 }
@@ -506,7 +547,7 @@ function showNoProject() {
   $("#moreActions").disabled = true;
   state.currentProvider = null; state.subscriptionBaseline = null; state.usageReference = null; resetUsage();
   ui.sidebar.classList.remove("open");
-  ui.taskTitle.textContent = "Select a project"; ui.taskPath.textContent = "Add a folder to organize your chats.";
+  ui.taskTitle.textContent = themeText("Select a project", "Choose your camp", state.prefs.jambalayaMode); ui.taskPath.textContent = themeText("Add a folder to organize your chats.", "Gather your chats around a bayou camp.", state.prefs.jambalayaMode);
   ui.composerContext.textContent = "Select a task to begin";
   $("#welcomeTitle").innerHTML = "Your work,<br /><em>without the clutter.</em>";
   $("#welcomeCopy").textContent = "Add a project folder to get started. Each project keeps its chats together.";
@@ -515,7 +556,7 @@ function showNoProject() {
   starter.querySelector("strong").textContent = "Start a chat";
   starter.querySelector("small").textContent = "Work in the selected project";
   setConnection(state.ready, state.ready ? "Hydra connected" : "Hydra unavailable");
-  resetTranscript(); renderSessions();
+  resetTranscript(); renderSessions(); renderBrandContext();
 }
 
 async function deleteSelectedChat() {
@@ -585,15 +626,15 @@ async function runChatSearch() {
   const requestId = ++chatSearchRequest;
   chatSearchController?.abort();
   ui.chatSearchResults.replaceChildren();
-  if (!query) { ui.chatSearchStatus.textContent = "Type to search your chats."; return; }
-  ui.chatSearchStatus.textContent = "Searching…";
+  if (!query) { ui.chatSearchStatus.textContent = louisiana("Type to search your chats.", "Follow the scent: search your chat titles and messages."); return; }
+  ui.chatSearchStatus.textContent = louisiana("Searching…", "Following the scent · Searching…");
   const controller = new AbortController();
   chatSearchController = controller;
   try {
     const response = await requestJson(`/api/chat-search?q=${encodeURIComponent(query)}`, { signal: controller.signal });
     if (requestId !== chatSearchRequest || !ui.chatSearchDialog.open) return;
     const results = response.results || [];
-    ui.chatSearchStatus.textContent = results.length ? `${results.length} chat${results.length === 1 ? "" : "s"} found${results.length === 50 ? " (first 50)" : ""}` : "No matching chats.";
+    ui.chatSearchStatus.textContent = results.length ? `${results.length} chat${results.length === 1 ? "" : "s"} found${results.length === 50 ? " (first 50)" : ""}` : louisiana("No matching chats.", "No pots with that recipe · No matching chats.");
     for (const result of results) {
       const button = document.createElement("button"); button.type = "button"; button.className = "chat-search-result";
       const title = document.createElement("strong"); title.textContent = result.title;
@@ -638,7 +679,7 @@ function selectSession(id, initialConfig = []) {
   ui.prompt.value = ""; ui.prompt.style.height = "auto"; state.attachments = []; renderAttachments();
   ui.prompt.disabled = false; $("#attachImage").disabled = false;
   renderSessions();
-  ui.taskTitle.textContent = item.title || "Untitled chat"; ui.taskPath.textContent = item.cwd || "Local workspace";
+  ui.taskTitle.textContent = item.title || louisiana("Untitled chat", "A fresh pot · Untitled chat"); ui.taskPath.textContent = item.cwd || "Local workspace";
   ui.composer.querySelector(".send-button").disabled = false;
   for (const control of ["#modelControl", "#permissionControl", "#reasoningControl", "#usageControl", "#mobileControls", "#moreActions"]) $(control).disabled = false;
   ui.composerContext.textContent = `${basename(item.cwd)} · ${displayModel(item.currentModel)}`;
@@ -738,6 +779,7 @@ async function refreshThreadUsageDetails(sessionId) {
     if (snapshot && (snapshot.inputTokens || 0) >= state.usage.inputTokens
       && (snapshot.outputTokens || 0) >= state.usage.outputTokens) resetUsage(snapshot);
     state.subagentUsage = details.subagents || null;
+    state.subagentSavings = details.subagentSavings || null;
     if (state.usage.size <= 0 && details.reference?.contextWindow) state.usage.size = details.reference.contextWindow;
     renderUsageLabel();
     if (state.openControl === 'usageControl') openUsagePopover($('#usageControl'));
@@ -1061,7 +1103,7 @@ function renderQueuedInputs() {
   ui.followupQueue.hidden = !state.queuedInputs.length;
   if (!state.queuedInputs.length) return;
   const heading = document.createElement("div"); heading.className = "queue-heading";
-  heading.textContent = `${state.queuedInputs.length} queued · ${state.running ? "runs after the current task" : "choose Send now to continue"}`;
+  heading.textContent = `${state.queuedInputs.length} ${state.prefs?.jambalayaMode ? "on the back burner · queued" : "queued"} · ${state.running ? "runs after the current task" : "choose Send now to continue"}`;
   ui.followupQueue.append(heading);
   for (const input of state.queuedInputs) {
     const card = document.createElement("div"); card.className = "queued-input";
@@ -1434,7 +1476,8 @@ function openUsagePopover(anchor) {
   const rows = [
     ['Actual charge', subscribed ? (subagentCharge ? `Plan + ${subagentCharge} API` : 'Included with plan')
       : usage.costKnown ? formatCost(usage.costAmount) : usage.hasUsage ? 'Unavailable' : '$0.00'],
-    ...(subagents ? [['Subagents · API charges', subagentCharge || '$0.00'], ['Subagents · tokens', compactCount(subagents.tokens)]] : []),
+    ...(subagents ? [['Subagents · API charges', subagentCharge || '$0.00'], ['Subagents · tokens', compactCount(subagents.tokens)],
+      ['Subagents · est. saved', formatSubagentSavings(state.subagentSavings)]] : []),
     ...(subscribed ? [[`API equivalent · thread${cacheReadHeuristic ? ' · 10% assumed cache rate' : ''}`, equivalent === null ? 'Unavailable' : formatEstimatedCost(equivalent)],
       ['Thread context used', contextPercent === null ? 'Unavailable' : `${contextPercent}%`]] : []),
     ['Input tokens', compactCount(usage.inputTokens)],
@@ -1470,6 +1513,11 @@ function openUsagePopover(anchor) {
   note.textContent = subscribed
     ? `The percentage-point change is account-wide, not a measured per-thread share. New threads are snapshotted at creation; older threads start tracking on first view. Other chats/devices can affect it; delayed reports or a window reset cannot be reconstructed. Thread context % uses the latest request and a catalog reference window when available. API equivalent assumes ${model || 'the selected model'} throughout, text rates and 5-minute cache writes. For Codex models without bundled API rates, catalog input/output rates are used with an assumed cache-read rate of 10% of ordinary input. This is a heuristic, not a verified rate; other models can differ. Cache writes with unknown prices remain Unavailable. This is not a charge and may differ from direct API pricing. Unknown rates or context windows show Unavailable.`
     : 'Cached reads are included in input. Cost is shown only when the provider reports an actual charge.';
+  if (subagents) {
+    const savingsNote = document.createElement('p'); savingsNote.className = 'popover-hint';
+    savingsNote.textContent = `Est. saved: what the subagents' tokens would have cost at ${model || 'the primary model'}'s per-token price, minus what they cost on their own models.`;
+    details.append(savingsNote);
+  }
   details.append(note);
   popover.append(details);
 }
@@ -1552,7 +1600,7 @@ const systemAppearance = window.matchMedia("(prefers-color-scheme: light)");
 function updateThemeColor() {
   const isLight = state.prefs.theme === "light" || (state.prefs.theme === "system" && systemAppearance.matches);
   if (state.prefs.jambalayaMode) {
-    document.querySelector('meta[name="theme-color"]').content = isLight ? "#fff3e0" : "#21120c";
+    document.querySelector('meta[name="theme-color"]').content = isLight ? "#faf4e8" : "#101d19";
     return;
   }
   document.querySelector('meta[name="theme-color"]').content = isLight ? "#f4f5f2" : "#0f100e";
@@ -2309,7 +2357,7 @@ $("#moreActions").addEventListener("click", async () => {
 $("#preferencesForm").addEventListener("submit", async (event) => {
   event.preventDefault(); const form = event.currentTarget; const saveButton = $("#savePreferences");
   if (saveButton.disabled || !state.modelSettingsReady) return;
-  saveButton.disabled = true; saveButton.textContent = "Saving…";
+  saveButton.disabled = true; saveButton.textContent = louisiana("Saving…", "Bottling the recipe · Saving…");
   state.prefs = {
     theme: form.elements.theme.value,
     accent: form.elements.accent.value,
@@ -2354,9 +2402,9 @@ $("#preferencesForm").addEventListener("submit", async (event) => {
     state.generation = generation.settings;
     renderSubagents($("#subagentList"), agents.settings.subagents, state.modelProviders, syncSubagentControls);
     ui.preferencesDialog.close();
-    showToast(`Preferences saved.${kaneoNote}`);
+    showToast(`${louisiana("Preferences saved.", "House recipe saved. Laissez les bons temps rouler!")}${kaneoNote}`);
   } catch (error) { showToast(error.message); }
-  finally { saveButton.disabled = false; saveButton.textContent = "Save preferences"; }
+  finally { saveButton.disabled = false; saveButton.textContent = louisiana("Save preferences", "Save the house recipe"); }
 });
 $("#modelControl").addEventListener("click", (event) => { void openPicker("model", "Choose a model", "MODEL", event.currentTarget); });
 $("#mobileControls").addEventListener("click", openMobileControls);
@@ -2528,7 +2576,7 @@ ui.chatSearchDialog.addEventListener("close", () => {
 ui.chatSearchInput.addEventListener("input", () => {
   clearTimeout(chatSearchTimer); ++chatSearchRequest; chatSearchController?.abort();
   ui.chatSearchResults.replaceChildren();
-  ui.chatSearchStatus.textContent = ui.chatSearchInput.value.trim() ? "Searching…" : "Type to search your chats.";
+  ui.chatSearchStatus.textContent = ui.chatSearchInput.value.trim() ? louisiana("Searching…", "Following the scent · Searching…") : louisiana("Type to search your chats.", "Follow the scent: search your chat titles and messages.");
   chatSearchTimer = setTimeout(runChatSearch, 250);
 });
 document.addEventListener("keydown", (event) => {
@@ -2656,7 +2704,7 @@ async function refreshSettingsSubscriptionUsage() {
 }
 
 function resetUsage(current = {}) {
-  state.subagentUsage = null;
+  state.subagentUsage = null; state.subagentSavings = null;
   const cost = current.costAmount ?? current.cost?.amount;
   state.usage = {
     inputTokens: Number.isSafeInteger(current.inputTokens) ? current.inputTokens : 0,

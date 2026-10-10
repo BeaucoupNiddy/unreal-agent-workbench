@@ -30,9 +30,10 @@ export function assumesCacheReadRate(usage, provider, model, reference = null) {
     && !Number.isFinite(reference?.pricing?.read) && count(usage?.cachedReadTokens) > 0;
 }
 
-export function apiEquivalent(usage, provider, model, reference = null) {
+// USD per million text tokens for a subscription model's API equivalent, or null.
+export function apiRates(provider, model, reference = null) {
   const id = typeof model === 'string' ? model.toLowerCase() : '';
-  const rates = provider === 'claude-code'
+  return provider === 'claude-code'
     ? (CLAUDE_RATES[id] || (id === 'claude-sonnet-4-5' ? CLAUDE_RATES.sonnet
       : id === 'claude-opus-4-5' ? CLAUDE_RATES.opus
         : id === 'claude-haiku-4-5' ? CLAUDE_RATES.haiku : null))
@@ -43,6 +44,10 @@ export function apiEquivalent(usage, provider, model, reference = null) {
       // the cache-write rate when the catalog doesn't publish it.
       read: reference.pricing.read ?? reference.pricing.input * 0.1
     } : null)) : null;
+}
+
+export function apiEquivalent(usage, provider, model, reference = null) {
+  const rates = apiRates(provider, model, reference);
   if (!rates) return null;
 
   const input = count(usage?.inputTokens);
@@ -61,4 +66,13 @@ export function threadContextPercent(usage) {
   const used = usage?.used, size = usage?.size;
   if (!Number.isFinite(used) || !Number.isFinite(size) || used < 0 || size <= 0) return null;
   return Math.round(100 * used / size);
+}
+
+// Popup text for a chat's estimated subagent saving; a negative saving means the
+// subagents' models cost more than the primary model would have.
+export function formatSubagentSavings(savings) {
+  if (!savings?.responses) return 'Unavailable';
+  const amount = Math.abs(savings.saved);
+  const text = `$${amount.toFixed(amount > 0 && amount < 0.01 ? 4 : 2)}`;
+  return `${savings.saved < 0 ? `−${text} (cost more)` : text}${savings.unpricedResponses ? ' (partial)' : ''}${savings.assumedCacheRate ? ' · assumed cache rate' : ''}`;
 }

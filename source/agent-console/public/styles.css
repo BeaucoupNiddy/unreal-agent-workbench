@@ -12,6 +12,7 @@
   --quiet: #77786f;
   --accent: #c9f277;
   --accent-soft: #28331c;
+  --on-accent: #171b11;
   --danger: #f09b91;
   --shadow: 0 24px 80px rgba(0, 0, 0, .24);
   --hover-bg: #1c1d1a;
@@ -250,7 +251,7 @@ kbd { margin-left: auto; padding: 3px 5px; border: 1px solid var(--line-strong);
 .permission-card p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 7px 0 12px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .permission-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .permission-actions button { padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); cursor: pointer; color: var(--muted); font-size: 10px; }
-.permission-actions button:first-child { border-color: var(--accent); background: var(--accent); color: #171b11; }
+.permission-actions button:first-child { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .run-state { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px; margin: 0 0 24px; color: var(--muted); font: 11px var(--sans); }
 .run-state span { color: var(--text); font-weight: 560; }
 .run-state small { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
@@ -324,7 +325,7 @@ kbd { margin-left: auto; padding: 3px 5px; border: 1px solid var(--line-strong);
 .drop-overlay.visible { display: grid; }
 .turn-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .turn-images img { display: block; max-width: min(260px, 100%); max-height: 220px; border: 1px solid var(--line); border-radius: 10px; object-fit: contain; background: var(--attachment-bg); }
-.send-button { margin-left: auto; border-color: var(--accent); background: var(--accent); color: #1c2115; font-size: 19px; font-weight: 650; }
+.send-button { margin-left: auto; border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-size: 19px; font-weight: 650; }
 .send-button:disabled { border-color: var(--line); background: var(--disabled-bg); color: var(--disabled-text); cursor: default; }
 .stop-button { border-color: #5a3734; background: #2c1c1a; color: #f2aaa0; font-size: 13px; }
 .stop-button:hover:not(:disabled) { background: #452724; }
@@ -346,7 +347,7 @@ kbd { margin-left: auto; padding: 3px 5px; border: 1px solid var(--line-strong);
 .modal-note { margin: -5px 0 0; color: var(--quiet); font-size: 10px; line-height: 1.5; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .modal-actions button { height: 34px; padding: 0 13px; border: 1px solid var(--line-strong); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
-.modal-actions .primary { border-color: var(--accent); background: var(--accent); color: #171b11; }
+.modal-actions .primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .picker-card { grid-template-rows: auto auto minmax(0,1fr); height: min(650px, calc(100vh - 50px)); }
 .picker-list { display: grid; min-height: 0; align-content: start; gap: 4px; overflow-y: auto; }
 .picker-row { display: flex; width: 100%; min-width: 0; align-items: center; gap: 4px; }
@@ -392,10 +393,10 @@ body[data-theme="light"][data-accent="amber"], body[data-theme="system"][data-ac
   body[data-theme="system"][data-accent="amber"] { --accent:#f1b75c; --accent-soft:#342718; }
 }
 body[data-theme="dark"], body[data-theme="warm"] { color-scheme: dark; }
-body[data-theme="light"] { --skeleton-a:#e6e9e3; --skeleton-b:#f7f8f5; }
+body[data-theme="light"] { --skeleton-a:#e6e9e3; --skeleton-b:#f7f8f5; --on-accent:#fff; }
 body[data-theme="light"] .eyebrow { color: var(--quiet); }
 @media (prefers-color-scheme: light) {
-  body[data-theme="system"] { --skeleton-a:#e6e9e3; --skeleton-b:#f7f8f5; }
+  body[data-theme="system"] { --skeleton-a:#e6e9e3; --skeleton-b:#f7f8f5; --on-accent:#fff; }
   body[data-theme="system"] .eyebrow { color: var(--quiet); }
 }
 @media (min-width: 761px) {
@@ -507,175 +508,182 @@ body[data-theme="light"] .eyebrow { color: var(--quiet); }
 .modal-actions button.danger:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--modal-bg)); }
 .modal-actions button:disabled { opacity: .55; cursor: wait; }
 
-/* Jambalaya mode is a full visual identity, not only a renamed label. */
-body[data-brand="jambalaya"][data-accent] {
-  --page: #21120c;
-  --sidebar: #29150d;
-  --surface: #341a10;
-  --surface-raised: #3c1f12;
-  --surface-soft: #482617;
-  --line: #633a25;
-  --line-strong: #7c4a2e;
-  --text: #fff0d5;
-  --muted: #e8c19a;
-  --quiet: #b88b62;
-  --accent: #ffbd69;
-  --accent-soft: #5b2d1d;
-  --danger: #ff9f8a;
-  --shadow: 0 24px 80px rgba(40, 13, 4, .36);
-  --hover-bg: #3d2013;
-  --card-bg: rgba(57, 28, 16, .78);
-  --topbar-bg: rgba(33, 18, 12, .86);
-  --button-bg: linear-gradient(180deg, #4b2818, #371b10);
-  --button-hover: #542c1a;
-  --button-text: #fff0d5;
-  --kbd-bg: #32190f;
-  --avatar-bg: #4b2718;
-  --avatar-text: #ffe3ba;
-  --heading-text: #fff2d8;
-  --orbit-bg: radial-gradient(circle, #5a2d1b 0 28%, transparent 29%), #2b160e;
-  --message-text: #fce8c9;
-  --code-bg: #28150d;
-  --code-inline-bg: #3a1e12;
-  --code-text: #ffd18a;
-  --code-pre-text: #f5ddbd;
-  --code-muted: #c39a72;
-  --event-icon-bg: #512918;
-  --event-title: #ffe3ba;
-  --event-bg: rgba(61, 30, 17, .78);
-  --control-bg: rgba(52, 26, 16, .92);
-  --popover-bg: #3a1d11;
-  --field-bg: #28150d;
-  --usage-bg: #2a160e;
-  --composer-bg: rgba(54, 27, 16, .96);
-  --composer-border: #805034;
-  --placeholder: #b88b62;
-  --attachment-bg: #28150d;
-  --drop-bg: rgba(42, 20, 11, .96);
-  --disabled-bg: #4a291b;
-  --disabled-text: #9c7453;
-  --toast-bg: #512918;
-  --toast-text: #ffe9c9;
-  --modal-bg: #3a1d11;
-  --backdrop: rgba(19, 7, 3, .76);
-  --project-hover: #3d2013;
-  --brand-bowl: #d95d39;
-  --brand-rim: #f4a261;
-  --brand-garnish: #ffe29a;
-  --brand-steam: #ffcf83;
+/* Louisiana palette: explicit theme states outrank the generic theme/accent rules. */
+body[data-brand="jambalaya"][data-theme="dark"][data-accent], body[data-brand="jambalaya"][data-theme="warm"][data-accent], body[data-brand="jambalaya"][data-theme="system"][data-accent] {
+  --page:#101d19;
+  --sidebar:#142720;
+  --surface:#1b3028;
+  --surface-raised:#22392f;
+  --surface-soft:#294338;
+  --line:#385448;
+  --line-strong:#527060;
+  --text:#f4ecd8;
+  --muted:#d0c8ae;
+  --quiet:#b0b99d;
+  --accent:#e8c45d;
+  --on-accent:#1f1428;
+  --accent-soft:#493d20;
+  --danger:#ff9183;
+  --shadow:0 24px 80px #06110db8;
+  --hover-bg:#294438;
+  --card-bg:rgba(27,48,40,.9);
+  --topbar-bg:rgba(16,29,25,.9);
+  --button-bg:linear-gradient(135deg,#392448,#263d31 70%,#493d20);
+  --button-hover:#394d3d;
+  --button-text:#fff4dc;
+  --kbd-bg:#172820;
+  --avatar-bg:#382b48;
+  --avatar-text:#f6d983;
+  --heading-text:#fff2d4;
+  --orbit-bg:radial-gradient(circle,#7d342d 0 28%,transparent 29%),#182c24;
+  --message-text:#f4ecd8;
+  --code-bg:#14251f;
+  --code-inline-bg:#2b4035;
+  --code-text:#f5ce71;
+  --code-pre-text:#e8e3d4;
+  --code-muted:#bdc5af;
+  --event-icon-bg:#443146;
+  --event-title:#f4d77e;
+  --event-bg:rgba(27,48,40,.9);
+  --control-bg:rgba(27,48,40,.96);
+  --popover-bg:#20372d;
+  --field-bg:#14251f;
+  --usage-bg:#14251f;
+  --composer-bg:rgba(27,48,40,.98);
+  --composer-border:#74845c;
+  --placeholder:#bdc5af;
+  --attachment-bg:#14251f;
+  --drop-bg:rgba(16,29,25,.98);
+  --disabled-bg:#33483c;
+  --disabled-text:#bdc5af;
+  --toast-bg:#382b48;
+  --toast-text:#fff2d4;
+  --modal-bg:#20372d;
+  --backdrop:rgba(4,13,10,.82);
+  --project-hover:#294438;
+  --brand-bowl:#bf493b;
+  --brand-rim:#e9b64d;
+  --brand-garnish:#e3d27c;
+  --brand-steam:#e7bd66;
+  color-scheme:dark;
 }
-
-body[data-brand="jambalaya"] .workspace { background: radial-gradient(circle at 50% -20%, rgba(244, 162, 97, .13), transparent 38%), var(--page); }
-body[data-brand="jambalaya"] .empty-orbit::after { border-top-color: rgba(244, 162, 97, .32); }
-body[data-brand="jambalaya"] .brand-switch { border-radius: 10px; background: linear-gradient(90deg, rgba(217, 93, 57, .08), transparent); }
-
 body[data-brand="jambalaya"][data-theme="light"][data-accent] {
-  --page: #fff6e9;
-  --sidebar: #f7e2c4;
-  --surface: #fffaf2;
-  --surface-raised: #fffdf8;
-  --surface-soft: #f6e5ca;
-  --line: #ead4b4;
-  --line-strong: #d8b88e;
-  --text: #3b2114;
-  --muted: #6d4831;
-  --quiet: #987354;
-  --accent: #d95d39;
-  --accent-soft: #ffe1b2;
-  --danger: #a83b2a;
-  --shadow: 0 24px 80px rgba(115, 66, 22, .14);
-  --hover-bg: #f4e0c2;
-  --card-bg: rgba(255, 250, 242, .88);
-  --topbar-bg: rgba(255, 246, 233, .88);
-  --button-bg: linear-gradient(180deg, #fffdf8, #f9ecd8);
-  --button-hover: #f7e8d0;
-  --button-text: #4a2919;
-  --kbd-bg: #fff8ec;
-  --avatar-bg: #fff6e7;
-  --avatar-text: #70482e;
-  --heading-text: #3b2114;
-  --orbit-bg: radial-gradient(circle, #ffe7bd 0 28%, transparent 29%), #fffaf2;
-  --message-text: #4b2b1b;
-  --code-bg: #fff8ec;
-  --code-inline-bg: #fff0d8;
-  --code-text: #a9452a;
-  --code-pre-text: #5c3924;
-  --code-muted: #8d684a;
-  --event-icon-bg: #ffedcf;
-  --event-title: #5a321e;
-  --event-bg: rgba(255, 250, 242, .84);
-  --control-bg: rgba(255, 250, 242, .9);
-  --popover-bg: #fffaf2;
-  --field-bg: #fff8ec;
-  --usage-bg: #fff8ec;
-  --composer-bg: rgba(255, 250, 242, .96);
-  --composer-border: #dfbf94;
-  --placeholder: #aa8261;
-  --attachment-bg: #fff6e7;
-  --drop-bg: rgba(255, 248, 236, .96);
-  --disabled-bg: #f0dfc7;
-  --disabled-text: #b49a7c;
-  --toast-bg: #fffaf2;
-  --toast-text: #4b2b1b;
-  --modal-bg: #fffaf2;
-  --backdrop: rgba(74, 40, 18, .34);
-  --project-hover: #f4e0c2;
+  --page:#faf4e8;
+  --sidebar:#eee5d2;
+  --surface:#fffaf0;
+  --surface-raised:#fffdf8;
+  --surface-soft:#f1e8d5;
+  --line:#d9ceb8;
+  --line-strong:#bcae91;
+  --text:#29251f;
+  --muted:#51483a;
+  --quiet:#685d4b;
+  --accent:#674778;
+  --on-accent:#fffaf0;
+  --accent-soft:#e9dff0;
+  --danger:#a52d25;
+  --shadow:0 24px 80px rgba(37,29,20,.13);
+  --hover-bg:#eee5d3;
+  --card-bg:rgba(255,250,240,.9);
+  --topbar-bg:rgba(250,244,232,.92);
+  --button-bg:linear-gradient(135deg,#fffaf0,#f1e8d5);
+  --button-hover:#e9dfcb;
+  --button-text:#29251f;
+  --kbd-bg:#f2eadc;
+  --avatar-bg:#e9dff0;
+  --avatar-text:#493553;
+  --heading-text:#29251f;
+  --orbit-bg:radial-gradient(circle,#e9dff0 0 28%,transparent 29%),#fffaf0;
+  --message-text:#30291f;
+  --code-bg:#f5efdf;
+  --code-inline-bg:#ece3d2;
+  --code-text:#573d68;
+  --code-pre-text:#30291f;
+  --code-muted:#645b4d;
+  --event-icon-bg:#e9dff0;
+  --event-title:#3e3045;
+  --event-bg:rgba(255,250,240,.88);
+  --control-bg:rgba(255,250,240,.94);
+  --popover-bg:#fffaf0;
+  --field-bg:#fffaf0;
+  --usage-bg:#f5efdf;
+  --composer-bg:rgba(255,250,240,.98);
+  --composer-border:#c9bca4;
+  --placeholder:#756b5a;
+  --attachment-bg:#f4eddf;
+  --drop-bg:rgba(250,244,232,.98);
+  --disabled-bg:#e6dece;
+  --disabled-text:#746b5c;
+  --toast-bg:#fffaf0;
+  --toast-text:#29251f;
+  --modal-bg:#fffaf0;
+  --backdrop:rgba(32,27,21,.35);
+  --project-hover:#eee5d3;
+  --brand-bowl:#a83f32;
+  --brand-rim:#785516;
+  --brand-garnish:#536d35;
+  --brand-steam:#674778;
+  color-scheme:light;
 }
-
-@media (prefers-color-scheme: light) {
-  body[data-brand="jambalaya"][data-theme="system"][data-accent] {
-    --page: #fff6e9;
-    --sidebar: #f7e2c4;
-    --surface: #fffaf2;
-    --surface-raised: #fffdf8;
-    --surface-soft: #f6e5ca;
-    --line: #ead4b4;
-    --line-strong: #d8b88e;
-    --text: #3b2114;
-    --muted: #6d4831;
-    --quiet: #987354;
-    --accent: #d95d39;
-    --accent-soft: #ffe1b2;
-    --danger: #a83b2a;
-    --shadow: 0 24px 80px rgba(115, 66, 22, .14);
-    --hover-bg: #f4e0c2;
-    --card-bg: rgba(255, 250, 242, .88);
-    --topbar-bg: rgba(255, 246, 233, .88);
-    --button-bg: linear-gradient(180deg, #fffdf8, #f9ecd8);
-    --button-hover: #f7e8d0;
-    --button-text: #4a2919;
-    --kbd-bg: #fff8ec;
-    --avatar-bg: #fff6e7;
-    --avatar-text: #70482e;
-    --heading-text: #3b2114;
-    --orbit-bg: radial-gradient(circle, #ffe7bd 0 28%, transparent 29%), #fffaf2;
-    --message-text: #4b2b1b;
-    --code-bg: #fff8ec;
-    --code-inline-bg: #fff0d8;
-    --code-text: #a9452a;
-    --code-pre-text: #5c3924;
-    --code-muted: #8d684a;
-    --event-icon-bg: #ffedcf;
-    --event-title: #5a321e;
-    --event-bg: rgba(255, 250, 242, .84);
-    --control-bg: rgba(255, 250, 242, .9);
-    --popover-bg: #fffaf2;
-    --field-bg: #fff8ec;
-    --usage-bg: #fff8ec;
-    --composer-bg: rgba(255, 250, 242, .96);
-    --composer-border: #dfbf94;
-    --placeholder: #aa8261;
-    --attachment-bg: #fff6e7;
-    --drop-bg: rgba(255, 248, 236, .96);
-    --disabled-bg: #f0dfc7;
-    --disabled-text: #b49a7c;
-    --toast-bg: #fffaf2;
-    --toast-text: #4b2b1b;
-    --modal-bg: #fffaf2;
-    --backdrop: rgba(74, 40, 18, .34);
-    --project-hover: #f4e0c2;
+@media(prefers-color-scheme:light) { body[data-brand="jambalaya"][data-theme="system"][data-accent] {
+  --page:#faf4e8;
+  --sidebar:#eee5d2;
+  --surface:#fffaf0;
+  --surface-raised:#fffdf8;
+  --surface-soft:#f1e8d5;
+  --line:#d9ceb8;
+  --line-strong:#bcae91;
+  --text:#29251f;
+  --muted:#51483a;
+  --quiet:#685d4b;
+  --accent:#674778;
+  --on-accent:#fffaf0;
+  --accent-soft:#e9dff0;
+  --danger:#a52d25;
+  --shadow:0 24px 80px rgba(37,29,20,.13);
+  --card-bg:rgba(255,250,240,.9);
+  --topbar-bg:rgba(250,244,232,.92);
+  --button-bg:linear-gradient(135deg,#fffaf0,#f1e8d5);
+  --button-hover:#e9dfcb;
+  --button-text:#29251f;
+  --kbd-bg:#f2eadc;
+  --avatar-bg:#e9dff0;
+  --avatar-text:#493553;
+  --heading-text:#29251f;
+  --orbit-bg:radial-gradient(circle,#e9dff0 0 28%,transparent 29%),#fffaf0;
+  --message-text:#30291f;
+  --code-bg:#f5efdf;
+  --code-inline-bg:#ece3d2;
+  --code-text:#573d68;
+  --code-pre-text:#30291f;
+  --code-muted:#645b4d;
+  --event-icon-bg:#e9dff0;
+  --event-title:#3e3045;
+  --event-bg:rgba(255,250,240,.88);
+  --control-bg:rgba(255,250,240,.94);
+  --popover-bg:#fffaf0;
+  --field-bg:#fffaf0;
+  --usage-bg:#f5efdf;
+  --composer-bg:rgba(255,250,240,.98);
+  --composer-border:#c9bca4;
+  --placeholder:#756b5a;
+  --attachment-bg:#f4eddf;
+  --drop-bg:rgba(250,244,232,.98);
+  --disabled-bg:#e6dece;
+  --disabled-text:#746b5c;
+  --toast-bg:#fffaf0;
+  --toast-text:#29251f;
+  --modal-bg:#fffaf0;
+  --backdrop:rgba(32,27,21,.35);
+  --project-hover:#eee5d3;
+  --brand-bowl:#a83f32;
+  --brand-rim:#785516;
+  --brand-garnish:#536d35;
+  --brand-steam:#674778;
+  color-scheme:light;
   }
 }
+
 .project-source { display: grid; gap: 6px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--field-bg); }
 .project-source > span { color: var(--quiet); font: 9px var(--mono); letter-spacing: .08em; }
 .project-source strong { font-size: 12px; font-weight: 560; }
@@ -1085,6 +1093,12 @@ body[data-brand="jambalaya"][data-theme="light"][data-accent] {
 .browser-frame.pinned { border-color: var(--accent); }
 .browser-frame img { display: block; width: 100%; max-height: 46vh; object-fit: contain; object-position: top; cursor: zoom-in; }
 .browser-frame img[hidden], .browser-frame-empty[hidden] { display: none; }
+.browser-lightbox { width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 56px 24px 24px; border: 0; background: transparent; cursor: zoom-out; }
+.browser-lightbox[open] { display: grid; place-items: center; }
+.browser-lightbox::backdrop { background: rgba(0,0,0,.78); }
+.browser-lightbox img { display: block; max-width: 100%; max-height: calc(100vh - 80px); object-fit: contain; border-radius: 8px; box-shadow: 0 20px 80px rgba(0,0,0,.5); cursor: default; }
+.browser-lightbox-close { position: fixed; top: 10px; right: 12px; width: 44px; height: 44px; border: 0; border-radius: 10px; background: rgba(255,255,255,.14); color: #fff; cursor: pointer; font-size: 24px; line-height: 1; }
+.browser-lightbox-close:hover, .browser-lightbox-close:focus-visible { background: rgba(255,255,255,.26); }
 .browser-frame-empty { margin: 0; padding: 24px; color: var(--quiet); font-size: 12px; text-align: center; }
 .browser-frame-bar { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 6px; }
 .browser-viewing, .browser-live { padding: 3px 8px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--popover-bg, var(--surface)); color: var(--text); font-size: 10px; }
@@ -1127,3 +1141,282 @@ button.browser-step:hover { border-color: var(--line); background: var(--hover-b
 @media (max-width: 760px) {
   .browser-panel { position: fixed; z-index: 12; inset: 0; width: auto; min-width: 0; padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); border-left: 0; }
 }
+
+/* Bayou identity details; extras remain absent in the default brand. */
+.jambalaya-only { display:none !important; }
+body[data-brand="jambalaya"] .jambalaya-only { display:initial !important; }
+body[data-brand="jambalaya"] .workspace { background:radial-gradient(ellipse at 50% -25%,rgba(91,137,93,.2),transparent 48%),url("bayou-landscape.svg") center bottom / min(900px,100%) auto no-repeat,var(--page); }
+body[data-brand="jambalaya"] .sidebar { border-right:3px double var(--line-strong); background-image:linear-gradient(180deg,rgba(104,71,120,.12),transparent 45%); }
+body[data-brand="jambalaya"] .brand-switch, body[data-brand="jambalaya"] .composer, body[data-brand="jambalaya"] .message-bubble { border-color:var(--line-strong); }
+body[data-brand="jambalaya"] .brand-switch { border-radius:12px; background:linear-gradient(100deg,#bf493b22,#68477822,#e8c45d22); }
+body[data-brand="jambalaya"] :is(h1,h2,h3,.empty-title) { font-family:Georgia,"Times New Roman",serif; }
+body[data-brand="jambalaya"] :is(.jambalaya-badge,.activity-item,.settings-tabs button[aria-selected="true"]) { border-color:var(--accent); }
+body[data-brand="jambalaya"] .jambalaya-badge { border:1px solid var(--accent); border-radius:999px; background:var(--accent-soft); color:var(--text); }
+body[data-brand="jambalaya"] .jambalaya-motto { color:var(--muted); font:italic 14px Georgia,serif; }
+body[data-brand="jambalaya"] .louisiana-icon, body[data-brand="jambalaya"] .louisiana-icon svg { color:var(--accent); width:18px; height:18px; }
+body[data-brand="jambalaya"] :is(button,a,input,textarea,select,[tabindex]):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+@media(max-width:760px) { body[data-brand="jambalaya"] .jambalaya-landscape { max-width:100%; opacity:.68; } }
+@media(prefers-reduced-motion:reduce) { body[data-brand="jambalaya"] *,body[data-brand="jambalaya"] *::before,body[data-brand="jambalaya"] *::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
+
+/* Cast iron, brass, and the purple / green / gold of a Louisiana second line. */
+body[data-brand="jambalaya"] .default-only { display: none !important; }
+body[data-brand="jambalaya"] .louisiana-icon {
+  display: inline-block !important; flex: 0 0 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle;
+}
+body[data-brand="jambalaya"] .brand .louisiana-icon { width: 26px; height: 26px; flex-basis: 26px; color: var(--brand-bowl); }
+body[data-brand="jambalaya"] .empty-orbit .hero-mark { width: 38px; height: 38px; color: var(--accent); }
+body[data-brand="jambalaya"] .brand-row {
+  padding-bottom: 12px;
+  background: linear-gradient(90deg, #805698 0 33.33%, #50835b 33.33% 66.66%, #d6ad47 66.66%) left bottom / 100% 2px no-repeat;
+}
+body[data-brand="jambalaya"] :is(.new-thread,.search-chats,.add-project) > [data-jambalaya] { color: inherit; font-size: 12px; font-weight: 500; }
+body[data-brand="jambalaya"] :is(.new-thread,.search-chats) kbd { flex-shrink: 0; white-space: nowrap; }
+body[data-brand="jambalaya"] .sidebar-empty { padding: 10px; color: var(--quiet); font-size: 12px; line-height: 1.7; }
+body[data-brand="jambalaya"] .empty-state { padding-top: clamp(24px, 5vh, 55px); padding-bottom: 36px; }
+body[data-brand="jambalaya"] .empty-orbit { margin-bottom: 22px; border: 3px double var(--line-strong); }
+body[data-brand="jambalaya"] .jambalaya-badge {
+  display: inline-flex !important; align-items: center; gap: 6px; padding: 5px 11px;
+  font: 9px var(--mono); letter-spacing: .08em; margin-bottom: 14px;
+}
+body[data-brand="jambalaya"] .empty-state .eyebrow { max-width: 480px; line-height: 1.8; }
+body[data-brand="jambalaya"] .empty-state h2 { font-weight: 500; letter-spacing: -.045em; }
+body[data-brand="jambalaya"] .empty-state .jambalaya-motto { display: block !important; margin-top: 18px; font-size: 14px; }
+body[data-brand="jambalaya"] .empty-state .jambalaya-parishes { display: block !important; margin-top: 8px; color: var(--quiet); font: 9px/1.6 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+body[data-brand="jambalaya"] .starter-actions { margin-top: 24px; }
+body[data-brand="jambalaya"] .starter-actions .louisiana-icon { grid-column: 1; grid-row: 1 / 3; }
+body[data-brand="jambalaya"] .starter-actions :is(strong,small) { grid-column: 2; }
+body[data-brand="jambalaya"] .starter-actions strong { grid-row: 1; }
+body[data-brand="jambalaya"] .starter-actions small { grid-row: 2; }
+body[data-brand="jambalaya"] .timeline-button .louisiana-icon { width: 14px; height: 14px; margin-right: 6px; }
+body[data-brand="jambalaya"] .composer { border-top: 2px solid var(--brand-bowl); box-shadow: 0 -1px 0 var(--brand-rim), var(--shadow); }
+body[data-brand="jambalaya"] .send-button:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+body[data-brand="jambalaya"] .settings-tabs { gap: 16px; overflow-x: auto; }
+body[data-brand="jambalaya"] .settings-tabs button { white-space: nowrap; }
+body[data-brand="jambalaya"] .turn.assistant { border-left: 2px solid var(--brand-rim); padding-left: 14px; }
+body[data-brand="jambalaya"] .turn.user { border-left: 2px solid var(--brand-bowl); padding-left: 14px; }
+body[data-brand="jambalaya"] :is(.event-icon,.profile-avatar) { border: 1px solid var(--line-strong); }
+@media (max-height: 800px) and (min-width: 761px) {
+  body[data-brand="jambalaya"] .empty-orbit { width: 54px; height: 54px; margin-bottom: 18px; }
+  body[data-brand="jambalaya"] .empty-state > p:not(.eyebrow) { margin-top: 14px; }
+  body[data-brand="jambalaya"] .empty-state .jambalaya-parishes { margin-top: 6px; }
+  body[data-brand="jambalaya"] .empty-state h2 { font-size: clamp(36px, 4vw, 52px); }
+}
+@media (max-width: 760px) {
+  body[data-brand="jambalaya"] .empty-state { padding-top: 24px; }
+  body[data-brand="jambalaya"] .jambalaya-badge { font-size: 8px; letter-spacing: .04em; }
+  body[data-brand="jambalaya"] .empty-state h2 { font-size: 38px; }
+  body[data-brand="jambalaya"] .timeline-button .louisiana-icon { display: none !important; }
+  body[data-brand="jambalaya"] .timeline-button { font-size: 10px; }
+}
+
+@media (max-width: 600px) {
+  /* Give real project names room: the parade controls get their own row. */
+  body[data-brand="jambalaya"] .topbar { height: auto; flex-basis: auto; flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
+  body[data-brand="jambalaya"] .task-heading { flex: 1 0 100%; }
+  body[data-brand="jambalaya"] .topbar-actions { width: 100%; justify-content: flex-end; }
+  body[data-brand="jambalaya"] .timeline-button { white-space: nowrap; }
+}
+
+body[data-brand="jambalaya"] .send-button .louisiana-icon { color: inherit; }
+body[data-brand="jambalaya"] .mobile-brand-label { display: none !important; }
+@media (max-width: 600px) {
+  body[data-brand="jambalaya"] .desktop-brand-label { display: none; }
+  body[data-brand="jambalaya"] .mobile-brand-label { display: inline !important; }
+  body[data-brand="jambalaya"] .topbar-actions .live-state { flex-shrink: 0; min-width: 100px; max-width: 110px; }
+}
+
+/* Label wrappers must retain the ordinary brand's pre-wrapper typography. */
+:is(.new-thread,.search-chats,.add-project) > [data-default] { color: inherit; font: inherit; }
+
+/* Jambalaya Mardi Gras flourish: beads, fireflies, a spinning second-line ring.
+   Decoration only; every text color here keeps at least 4.5:1 against its surface. */
+body[data-brand="jambalaya"] {
+  --mg-purple:#a679e0; --mg-green:#5cc487; --mg-gold:#f3c95c; --mg-red:#ff8a6b;
+  --mg-title:linear-gradient(100deg,#ffe08a 0%,#ffb36b 38%,#ff8f7a 58%,#d9b0ff 100%);
+  --mg-glow:0 0 0 1px #f3c95c33,0 10px 40px #a679e033;
+  --mg-firefly:#ffe89a;
+}
+body[data-brand="jambalaya"][data-theme="light"],
+body[data-brand="jambalaya"][data-theme="light"][data-accent] {
+  --mg-purple:#6b3f8f; --mg-green:#2c6e45; --mg-gold:#a8740f; --mg-red:#a3322a;
+  --mg-title:linear-gradient(100deg,#5a2d7c 0%,#8a2f5a 40%,#a3322a 62%,#2c6e45 100%);
+  --mg-glow:0 0 0 1px #6b3f8f22,0 10px 34px #6b3f8f22;
+  --mg-firefly:#d79a1f;
+}
+@media(prefers-color-scheme:light) {
+  body[data-brand="jambalaya"][data-theme="system"] {
+    --mg-purple:#6b3f8f; --mg-green:#2c6e45; --mg-gold:#a8740f; --mg-red:#a3322a;
+    --mg-title:linear-gradient(100deg,#5a2d7c 0%,#8a2f5a 40%,#a3322a 62%,#2c6e45 100%);
+    --mg-glow:0 0 0 1px #6b3f8f22,0 10px 34px #6b3f8f22;
+    --mg-firefly:#d79a1f;
+  }
+}
+body[data-brand="jambalaya"] ::selection { background:var(--mg-gold); color:#1f1428; }
+
+/* A moonlit bayou behind the work area. */
+body[data-brand="jambalaya"] .workspace {
+  background:
+    radial-gradient(circle at 90% 17%,color-mix(in srgb,var(--mg-gold) 26%,transparent) 0 26px,color-mix(in srgb,var(--mg-gold) 9%,transparent) 30px,transparent 190px),
+    radial-gradient(ellipse at 12% -10%,color-mix(in srgb,var(--mg-purple) 20%,transparent),transparent 55%),
+    radial-gradient(ellipse at 50% 120%,color-mix(in srgb,var(--mg-green) 16%,transparent),transparent 60%),
+    url("bayou-landscape.svg") center bottom / min(1100px,100%) auto no-repeat,
+    var(--page);
+}
+body[data-brand="jambalaya"] .topbar { border-bottom:0; box-shadow:0 1px 0 var(--line); }
+body[data-brand="jambalaya"] .topbar::after {
+  position:absolute; inset:auto 0 -2px 0; height:2px; content:""; pointer-events:none;
+  background:linear-gradient(90deg,var(--mg-purple),var(--mg-green),var(--mg-gold),var(--mg-purple)) 0 0 / 300% 100%;
+  animation:mg-parade 14s linear infinite;
+}
+@keyframes mg-parade { to { background-position:300% 0; } }
+
+/* Strand of Mardi Gras beads across the brand row and the composer. */
+body[data-brand="jambalaya"] .brand-row {
+  background:
+    radial-gradient(circle,var(--mg-purple) 0 2.6px,transparent 3.2px) 0 calc(100% - 1px) / 21px 7px repeat-x,
+    radial-gradient(circle,var(--mg-green) 0 2.6px,transparent 3.2px) 7px calc(100% - 1px) / 21px 7px repeat-x,
+    radial-gradient(circle,var(--mg-gold) 0 2.6px,transparent 3.2px) 14px calc(100% - 1px) / 21px 7px repeat-x;
+  padding-bottom:14px;
+}
+body[data-brand="jambalaya"] .composer { position:relative; border-top:1px solid var(--composer-border); }
+body[data-brand="jambalaya"] .composer::before {
+  position:absolute; inset:-4px 18px auto; height:7px; content:""; pointer-events:none;
+  background:
+    radial-gradient(circle,var(--mg-purple) 0 2.6px,transparent 3.2px) 0 0 / 21px 7px repeat-x,
+    radial-gradient(circle,var(--mg-green) 0 2.6px,transparent 3.2px) 7px 0 / 21px 7px repeat-x,
+    radial-gradient(circle,var(--mg-gold) 0 2.6px,transparent 3.2px) 14px 0 / 21px 7px repeat-x;
+}
+body[data-brand="jambalaya"] .composer:focus-within { border-color:var(--mg-gold); box-shadow:var(--mg-glow),var(--shadow); }
+
+/* Sidebar: brass-trimmed pot button and a gold rail on the open camp. */
+body[data-brand="jambalaya"] .sidebar {
+  background:
+    radial-gradient(ellipse at 0 0,color-mix(in srgb,var(--mg-purple) 22%,transparent),transparent 55%),
+    radial-gradient(ellipse at 100% 100%,color-mix(in srgb,var(--mg-green) 14%,transparent),transparent 60%),
+    var(--sidebar);
+}
+body[data-brand="jambalaya"] .new-thread {
+  border:1.5px solid transparent;
+  background:linear-gradient(var(--sidebar),var(--sidebar)) padding-box,
+    linear-gradient(120deg,var(--mg-purple),var(--mg-green) 50%,var(--mg-gold)) border-box;
+  color:var(--text); font-weight:600; transition:transform .15s ease, box-shadow .15s ease;
+}
+body[data-brand="jambalaya"] .new-thread:hover {
+  background:linear-gradient(var(--surface-soft),var(--surface-soft)) padding-box,
+    linear-gradient(120deg,var(--mg-purple),var(--mg-green) 50%,var(--mg-gold)) border-box;
+  box-shadow:var(--mg-glow); transform:translateY(-1px);
+}
+body[data-brand="jambalaya"] .new-thread .louisiana-icon { color:var(--mg-gold); }
+body[data-brand="jambalaya"] .search-chats .louisiana-icon { color:var(--mg-red); }
+body[data-brand="jambalaya"] .add-project .louisiana-icon { color:var(--mg-green); }
+body[data-brand="jambalaya"] .session-item.active,
+body[data-brand="jambalaya"] .project-row.active { box-shadow:inset 3px 0 0 var(--mg-gold); }
+
+/* The hero: a second-line ring that turns, steam, and fireflies. */
+body[data-brand="jambalaya"] .empty-state { position:relative; isolation:isolate; }
+body[data-brand="jambalaya"] .empty-state::before {
+  position:absolute; inset:0; content:""; pointer-events:none; z-index:-1;
+  background:
+    radial-gradient(circle at 8% 22%,var(--mg-firefly) 0 1.6px,transparent 2.6px),
+    radial-gradient(circle at 19% 64%,var(--mg-firefly) 0 1.3px,transparent 2.3px),
+    radial-gradient(circle at 27% 8%,var(--mg-firefly) 0 1.9px,transparent 2.9px),
+    radial-gradient(circle at 36% 88%,var(--mg-firefly) 0 1.4px,transparent 2.4px),
+    radial-gradient(circle at 71% 14%,var(--mg-firefly) 0 1.5px,transparent 2.5px),
+    radial-gradient(circle at 83% 46%,var(--mg-firefly) 0 2px,transparent 3.0px),
+    radial-gradient(circle at 92% 78%,var(--mg-firefly) 0 1.4px,transparent 2.4px),
+    radial-gradient(circle at 64% 92%,var(--mg-firefly) 0 1.7px,transparent 2.7px),
+    radial-gradient(circle at 4% 84%,var(--mg-firefly) 0 1.2px,transparent 2.2px),
+    radial-gradient(circle at 55% 4%,var(--mg-firefly) 0 1.3px,transparent 2.3px);
+  filter:drop-shadow(0 0 3px var(--mg-firefly));
+  animation:mg-fireflies 7s ease-in-out infinite alternate;
+}
+@keyframes mg-fireflies {
+  0% { opacity:.2; transform:translate(0,0); }
+  45% { opacity:.95; }
+  70% { opacity:.35; }
+  100% { opacity:.85; transform:translate(-10px,-14px); }
+}
+body[data-brand="jambalaya"] .empty-orbit {
+  width:88px; height:88px; border:0; isolation:isolate;
+  background:var(--orbit-bg); box-shadow:var(--mg-glow);
+}
+body[data-brand="jambalaya"] .empty-orbit::before {
+  position:absolute; inset:-5px; z-index:-1; border-radius:50%; content:"";
+  background:conic-gradient(var(--mg-purple) 0 33%,var(--mg-green) 0 66%,var(--mg-gold) 0);
+  -webkit-mask:radial-gradient(closest-side,transparent calc(100% - 4.5px),#000 calc(100% - 4px));
+  mask:radial-gradient(closest-side,transparent calc(100% - 4.5px),#000 calc(100% - 4px));
+  animation:mg-spin 18s linear infinite;
+}
+body[data-brand="jambalaya"] .empty-orbit::after {
+  width:auto; height:auto; inset:-30px 30px auto; border:0; transform:none;
+  color:var(--mg-gold); font:300 22px/1 Georgia,serif; letter-spacing:6px; text-align:center;
+  content:"∿∿∿"; opacity:.0; animation:mg-steam 4.5s ease-in-out infinite;
+}
+@keyframes mg-spin { to { transform:rotate(360deg); } }
+@keyframes mg-steam {
+  0% { opacity:0; transform:translateY(10px) scaleX(.8); }
+  40% { opacity:.75; }
+  100% { opacity:0; transform:translateY(-14px) scaleX(1.15); }
+}
+body[data-brand="jambalaya"] .empty-orbit .hero-mark { width:44px; height:44px; color:var(--mg-gold); }
+body[data-brand="jambalaya"] .jambalaya-badge {
+  border:1px solid color-mix(in srgb,var(--mg-gold) 70%,transparent);
+  background:linear-gradient(100deg,color-mix(in srgb,var(--mg-purple) 26%,var(--surface)),color-mix(in srgb,var(--mg-green) 22%,var(--surface)) 55%,color-mix(in srgb,var(--mg-gold) 26%,var(--surface)));
+  color:var(--heading-text); font-weight:600; box-shadow:var(--mg-glow);
+}
+body[data-brand="jambalaya"] .jambalaya-badge .louisiana-icon { color:var(--mg-red); animation:mg-wiggle 2.8s ease-in-out infinite; transform-origin:50% 90%; }
+@keyframes mg-wiggle { 0%,70%,100% { transform:rotate(0); } 76% { transform:rotate(-14deg); } 84% { transform:rotate(12deg); } 92% { transform:rotate(-6deg); } }
+body[data-brand="jambalaya"] .empty-state h2 {
+  background:var(--mg-title); -webkit-background-clip:text; background-clip:text;
+  color:transparent; -webkit-text-fill-color:transparent;
+  padding:0 .06em .08em; text-shadow:none;
+}
+body[data-brand="jambalaya"] .empty-state .jambalaya-motto { color:var(--muted); font-size:17px; }
+body[data-brand="jambalaya"] .empty-state .jambalaya-parishes { color:var(--muted); font-size:10px; }
+
+/* Starter cards: one Mardi Gras colour each, lift on hover. */
+body[data-brand="jambalaya"] .starter-actions button {
+  position:relative; overflow:hidden; border-color:var(--line-strong); background:var(--card-bg);
+  transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+body[data-brand="jambalaya"] .starter-actions button::before {
+  position:absolute; inset:0 0 auto; height:3px; content:""; background:var(--card-color,var(--mg-gold));
+}
+body[data-brand="jambalaya"] .starter-actions button:nth-child(1) { --card-color:var(--mg-purple); }
+body[data-brand="jambalaya"] .starter-actions button:nth-child(2) { --card-color:var(--mg-green); }
+body[data-brand="jambalaya"] .starter-actions button:hover {
+  border-color:var(--card-color); transform:translateY(-3px) rotate(-.4deg);
+  box-shadow:0 14px 34px color-mix(in srgb,var(--card-color) 30%,transparent);
+}
+body[data-brand="jambalaya"] .starter-actions button:nth-child(2):hover { transform:translateY(-3px) rotate(.4deg); }
+body[data-brand="jambalaya"] .starter-actions .louisiana-icon {
+  width:30px; height:30px; padding:6px; border-radius:9px; color:var(--card-color);
+  background:color-mix(in srgb,var(--card-color) 16%,transparent);
+}
+body[data-brand="jambalaya"] .starter-actions strong { color:var(--heading-text); font-size:13px; }
+body[data-brand="jambalaya"] .starter-actions small { color:var(--muted); }
+
+/* Conversation: purple-tinted user bubbles, a gold-to-green rail for replies. */
+body[data-brand="jambalaya"] .turn.user { border-left:0; padding-left:0; }
+body[data-brand="jambalaya"] .turn.user .turn-body {
+  border-color:color-mix(in srgb,var(--mg-purple) 45%,var(--line));
+  background:color-mix(in srgb,var(--mg-purple) 14%,var(--surface-soft));
+}
+body[data-brand="jambalaya"] .turn.assistant { border-left:0; padding-left:16px;
+  background:linear-gradient(var(--mg-gold),var(--mg-green)) left top / 2px 100% no-repeat; }
+body[data-brand="jambalaya"] .message-content a { color:var(--mg-gold); }
+body[data-brand="jambalaya"][data-theme="light"] .message-content a { color:var(--mg-purple); }
+
+/* Controls: brass hover rings and a juicy send button. */
+body[data-brand="jambalaya"] :is(.timeline-button,.control-strip > button,.icon-button):hover:not(:disabled) { border-color:var(--mg-gold); }
+body[data-brand="jambalaya"] .send-button:not(:disabled) {
+  border-color:transparent; background:linear-gradient(140deg,var(--accent),color-mix(in srgb,var(--accent) 70%,var(--mg-red)));
+  box-shadow:0 4px 16px color-mix(in srgb,var(--accent) 40%,transparent); transition:transform .15s ease;
+}
+body[data-brand="jambalaya"] .send-button:not(:disabled):hover { transform:scale(1.07) rotate(-6deg); }
+body[data-brand="jambalaya"] .session-state.warm { background:var(--mg-green); box-shadow:0 0 0 3px color-mix(in srgb,var(--mg-green) 20%,transparent),0 0 8px var(--mg-green); }
+body[data-brand="jambalaya"] .session-state.busy { background:var(--mg-gold); animation:mg-simmer 1.4s ease-in-out infinite; }
+@keyframes mg-simmer { 50% { box-shadow:0 0 0 5px color-mix(in srgb,var(--mg-gold) 25%,transparent); } }
+body[data-brand="jambalaya"] :is(.session-list,.conversation) { scrollbar-color:color-mix(in srgb,var(--mg-purple) 60%,var(--line-strong)) transparent; }
+body[data-brand="jambalaya"] .footnote { color:var(--quiet); }

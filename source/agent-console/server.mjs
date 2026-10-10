@@ -1,6 +1,6 @@
-import { subagentUsage, usageDashboard } from "./usage-dashboard.mjs";
+import { subagentSavings, subagentUsage, usageDashboard } from "./usage-dashboard.mjs";
 import { getSubscriptionUsage } from "./subscription-usage.mjs";
-import { readModelUsageReference } from "./model-usage-reference.mjs";
+import { readCatalogModels, readModelUsageReference } from "./model-usage-reference.mjs";
 import { captureSubscriptionBaseline, readSubscriptionBaseline, deleteSubscriptionBaseline } from "./subscription-baseline.mjs";
 import { createServer } from "node:http";
 import { promises as fs } from "node:fs";
@@ -818,7 +818,8 @@ async function sessionUsageDetails(sessionId) {
     usage: { inputTokens, outputTokens, cachedReadTokens, cachedWriteTokens, thoughtTokens,
       used: lastContextTokens, size: reference?.contextWindow || 0,
       cost: costKnown && Number.isFinite(cost) ? { amount: cost, currency: 'USD' } : null },
-    subagents: subagentUsage(meta.usage?.events) };
+    subagents: subagentUsage(meta.usage?.events),
+    subagentSavings: subagentSavings(meta.usage?.events, meta, await readCatalogModels(catalogFile)) };
 }
 
 // The Kaneo key is checked with the instance before it reaches the keychain.

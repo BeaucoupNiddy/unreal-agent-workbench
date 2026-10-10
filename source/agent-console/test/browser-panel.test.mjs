@@ -47,3 +47,64 @@ test("sign-in status explains an open window and shows errors", async () => {
     assert.match(html, new RegExp(`class="[^"]*${selector}`), selector);
   }
 });
+
+// A stand-in for <dialog>: enough to drive the lightbox's own listeners.
+function fakeNode(extra = {}) {
+  const listeners = {};
+  return {
+    ...extra, listeners, attributes: {},
+    addEventListener(type, handler) { (listeners[type] ||= []).push(handler); },
+    dispatch(type, event = {}) {
+      const full = { target: this, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...event };
+      for (const handler of listeners[type] || []) handler(full);
+      return full;
+    },
+    removeAttribute(name) { delete this.attributes[name]; if (name === "src") this.src = ""; },
+    focus() { this.focused = true; }
+  };
+}
+function fakeLightbox() {
+  const image = fakeNode({ src: "", alt: "" });
+  const closeButton = fakeNode();
+  const dialog = fakeNode({
+    open: false,
+    querySelector: (selector) => (selector === "img" ? image : selector === ".browser-lightbox-close" ? closeButton : null),
+    showModal() { this.open = true; },
+    close() { if (this.open) { this.open = false; this.dispatch("close"); } }
+  });
+  return { dialog, image, closeButton };
+}
+
+test("the full-size screenshot closes with the × button, Escape, or a click on the backdrop", async () => {
+  const { setupLightbox } = await import("../public/browser-panel.js");
+  const { dialog, image, closeButton } = fakeLightbox();
+  const viewer = setupLightbox(dialog);
+  const thumbnail = fakeNode();
+  const openIt = () => { viewer.open("/api/sessions/a/browser/image/shot.png", "Screenshot", thumbnail); assert.equal(viewer.isOpen(), true); };
+
+  openIt();
+  assert.equal(image.src, "/api/sessions/a/browser/image/shot.png");
+  assert.equal(closeButton.focused, true);
+  closeButton.dispatch("click");
+  assert.equal(viewer.isOpen(), false, "close button");
+  assert.equal(image.src, "", "image is cleared");
+  assert.equal(thumbnail.focused, true, "focus returns to the thumbnail");
+
+  openIt();
+  const escape = dialog.dispatch("keydown", { key: "Escape" });
+  assert.equal(viewer.isOpen(), false, "Escape");
+  assert.equal(escape.stopped, true, "Escape does not also close the side panel");
+
+  openIt();
+  dialog.dispatch("click", { target: image });
+  assert.equal(viewer.isOpen(), true, "clicking the picture keeps it open");
+  dialog.dispatch("click", { target: dialog });
+  assert.equal(viewer.isOpen(), false, "backdrop click");
+});
+
+test("the page has the screenshot lightbox with a close button, and no longer opens a new window", async () => {
+  const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.match(html, /<dialog class="browser-lightbox" id="browserLightbox"[\s\S]*?class="browser-lightbox-close"[\s\S]*?<img[\s\S]*?<\/dialog>/);
+  const source = await readFile(new URL("../public/browser-panel.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /window\.open/);
+});

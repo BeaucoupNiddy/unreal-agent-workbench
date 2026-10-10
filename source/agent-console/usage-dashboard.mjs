@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { apiEquivalent } from './public/usage-equivalent.js';
-import { readModelUsageReference } from './model-usage-reference.mjs';
+import { apiEquivalent, apiRates, assumesCacheReadRate } from './public/usage-equivalent.js';
+import { modelUsageReference, openRouterRates, readModelUsageReference } from './model-usage-reference.mjs';
 import { readAuxiliaryUsage } from '../unreal-agent-acp/src/auxiliary-usage.mjs';
 
 const subscriptions = new Set(['claude-code', 'openai-codex']);
@@ -140,4 +140,56 @@ export function subagentUsage(events = []) {
     else result.unpricedApiResponses += 1;
   }
   return result.tokens ? result : null;
+}
+
+// Per-token text rates (USD per million) for any provider, from bundled API rates
+// or the OpenRouter catalog. Local models cost nothing per token.
+function tokenRates(provider, model, models) {
+  if (typeof provider === 'string' && provider.startsWith('local-')) return { input: 0, output: 0, read: 0, write: 0 };
+  if (provider === 'openrouter') return openRouterRates(models, model);
+  return apiRates(provider, model, modelUsageReference(models, provider, model));
+}
+
+// Prices one response's tokens. Unpublished cache rates are assumed: reads at 10%
+// of input and writes at 125% (common Anthropic and OpenAI ratios), and flagged.
+function priceTokens(event, rates, provider, model, models) {
+  const input = count(event.inputTokens), output = count(event.outputTokens);
+  const read = count(event.cachedReadTokens), write = count(event.cachedWriteTokens);
+  if (read + write > input) return null;
+  const readRate = Number.isFinite(rates.read) ? rates.read : rates.input * 0.1;
+  const writeRate = Number.isFinite(rates.write) ? rates.write : rates.input * 1.25;
+  const assumed = (read > 0 && (!Number.isFinite(rates.read)
+      || assumesCacheReadRate(event, provider, model, modelUsageReference(models, provider, model))))
+    || (write > 0 && !Number.isFinite(rates.write));
+  const amount = ((input - read - write) * rates.input + read * readRate + write * writeRate + output * rates.output) / 1_000_000;
+  return Number.isFinite(amount) ? { amount, assumed } : null;
+}
+
+// Estimated saving from subagents in one chat: what their tokens would have cost
+// at the primary model's per-token price, minus what they cost at their own model's
+// price (the reported charge when there is one). Responses that cannot be priced
+// on both sides are left out and counted.
+export function subagentSavings(events = [], primary = {}, models = []) {
+  const primaryRates = tokenRates(primary.provider, primary.model, models);
+  if (!primaryRates) return null;
+  const result = { primaryCost: 0, subagentCost: 0, saved: 0, responses: 0, unpricedResponses: 0, assumedCacheRate: false };
+  for (const event of Array.isArray(events) ? events : []) {
+    if (event?.purpose !== 'subagent') continue;
+    const asPrimary = priceTokens(event, primaryRates, primary.provider, primary.model, models);
+    let actual = null;
+    if (paidApi(event.provider) && Number.isFinite(event.cost) && event.cost >= 0) actual = { amount: event.cost, assumed: false };
+    else if (Number.isFinite(event.equivalent) && event.equivalent >= 0) actual = { amount: event.equivalent, assumed: false };
+    else {
+      const rates = tokenRates(event.provider, event.model, models);
+      if (rates) actual = priceTokens(event, rates, event.provider, event.model, models);
+    }
+    if (!asPrimary || !actual) { result.unpricedResponses += 1; continue; }
+    result.responses += 1;
+    result.primaryCost += asPrimary.amount;
+    result.subagentCost += actual.amount;
+    result.assumedCacheRate ||= asPrimary.assumed || actual.assumed;
+  }
+  if (!result.responses && !result.unpricedResponses) return null;
+  result.saved = result.primaryCost - result.subagentCost;
+  return result;
 }

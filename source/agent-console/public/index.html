@@ -11,32 +11,45 @@
     <title>Unreal Agent</title>
     <link id="favicon" rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link id="manifest" rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=33" />
+    <link rel="stylesheet" href="/styles.css?v=35" />
   </head>
   <body data-theme="system" data-accent="lime" data-brand="default">
+
+    <svg class="louisiana-symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" width="0" height="0" style="position:absolute;overflow:hidden">
+      <defs>
+        <symbol id="la-fleur" viewBox="0 0 24 24"><path d="M12 2c-4 4-4 7 0 11 4-4 4-7 0-11ZM9 13C6 5 1 8 3 12c1 2 3 3 6 3m6-2c3-8 8-5 6-1-1 2-3 3-6 3M7 16h10m-5-3v8m-5 0 5-3 5 3"/></symbol>
+        <symbol id="la-pot" viewBox="0 0 24 24"><path d="M5 10h14v6a5 5 0 0 1-5 5h-4a5 5 0 0 1-5-5v-6ZM2 11h3m14 0h3M4 7h16M8 4V2m4 2V1m4 3V2"/></symbol>
+        <symbol id="la-trumpet" viewBox="0 0 24 24"><path d="M2 9h13l6-4v14l-6-4H7a3 3 0 0 1 0-6m1 6v3h6v-3M9 5v4m4-4v4M7 5h4m0 0h4"/></symbol>
+        <symbol id="la-cypress" viewBox="0 0 24 24"><path d="M12 2v20M12 5 8 3m4 6L5 6m7 8-8-3m8 7L3 15m9-8 5-4m-5 9 7-6m-7 11 8-5M5 22h14"/></symbol>
+        <symbol id="la-pepper" viewBox="0 0 24 24"><path d="M15 6c1-3 3-4 5-4m-5 4c-6-1-8 4-6 8 1 3-3 6-6 7 10 1 18-6 17-11 0-3-2-4-5-4Z"/></symbol>
+        <symbol id="la-paddle" viewBox="0 0 24 24"><path d="m4 20 9-9m0 0c-2-2 0-5 4-8l4 4c-3 4-6 6-8 4ZM3 21l2-2M3 5h6m-3-3v6"/></symbol>
+        <symbol id="la-crawfish" viewBox="0 0 24 24"><path d="M9 10c-5-7-8-7-7-2 0 3 3 4 7 2m6 0c5-7 8-7 7-2 0 3-3 4-7 2M10 4l2 3 2-3m-2 3c-4 0-4 10 0 12 4-2 4-12 0-12Zm-3 5 6 0m-6 3h6m-5 5-3 3 5-1 5 1-3-3M8 13l-3 2m3 1-2 3m10-6 3 2m-3 1 2 3"/></symbol>
+      </defs>
+    </svg>
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
         <div class="window-drag"></div>
         <div class="sidebar-resize" id="sidebarResize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" aria-controls="sidebar" aria-valuemin="220" aria-valuemax="560" aria-valuenow="276" tabindex="0" title="Drag to resize sidebar (arrow keys also work)"></div>
         <div class="brand-row">
           <a class="brand" id="brandHome" href="/" aria-label="Unreal Agent home">
-            <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+            <svg class="default-only brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
               <path class="brand-steam" d="M10 10c-1.5-2.1 1.5-2.7 0-5M16 10c-1.5-2.1 1.5-2.7 0-5M22 10c-1.5-2.1 1.5-2.7 0-5" />
               <path class="brand-bowl" d="M4.5 14.25h23c-.75 7.4-5.25 11.25-11.5 11.25S5.25 21.65 4.5 14.25Z" />
               <path class="brand-rim" d="M4 14.25h24c0 2.1-5.37 3.8-12 3.8s-12-1.7-12-3.8Z" />
               <circle cx="10" cy="14.25" r="1.05" /><circle cx="16" cy="15.5" r="1.05" /><circle cx="22" cy="14.25" r="1.05" />
             </svg>
+            <svg class="louisiana-icon jambalaya-only brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-crawfish" /></svg>
             <span id="brandName">Unreal Agent</span>
           </a>
           <button class="icon-button quiet" id="collapseSidebar" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">‹</button>
         </div>
 
-        <button class="new-thread" id="newThread" type="button" title="Start a new chat"><span>＋</span> New chat <kbd>⌘ K</kbd></button>
-        <button class="search-chats" id="openChatSearch" type="button" title="Search chats (⌘ ⇧ F)"><span aria-hidden="true">⌕</span> Search chats <kbd>⌘ ⇧ F</kbd></button>
-        <button class="add-project" id="addProject" type="button"><span>▰</span> Add project</button>
+        <button class="new-thread" id="newThread" type="button" title="Start a new chat"><span class="default-only">＋</span><svg class="louisiana-icon jambalaya-only " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-pot" /></svg> <span data-jambalaya="Start a pot" data-default="New chat">New chat</span> <kbd>⌘ K</kbd></button>
+        <button class="search-chats" id="openChatSearch" type="button" title="Search chats (⌘ ⇧ F)"><span class="default-only" aria-hidden="true">⌕</span><svg class="louisiana-icon jambalaya-only " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-crawfish" /></svg> <span data-jambalaya="Find a pot" data-default="Search chats">Search chats</span> <kbd>⌘ ⇧ F</kbd></button>
+        <button class="add-project" id="addProject" type="button"><span class="default-only">▰</span><svg class="louisiana-icon jambalaya-only " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-cypress" /></svg> <span data-jambalaya="Add a bayou camp" data-default="Add project">Add project</span></button>
 
         <div class="sidebar-section">
-          <div class="section-heading"><span>Projects</span><span class="session-count" id="sessionCount"></span></div>
+          <div class="section-heading"><span data-jambalaya="Camps" data-default="Projects">Projects</span><span class="session-count" id="sessionCount"></span></div>
           <nav class="session-list project-list" id="sessionList" aria-label="Projects and chats">
             <div class="session-skeleton"><i></i><i></i><i></i></div>
           </nav>
@@ -45,7 +58,7 @@
         <div class="sidebar-footer">
           <button class="profile-row" id="openPreferences" type="button">
             <span class="profile-avatar">PN</span>
-            <span><strong>Local workspace</strong><small>Hydra connected</small></span>
+            <span><strong data-default="Local workspace" data-jambalaya="Your Louisiana home base">Local workspace</strong><small data-default="Hydra connected" data-jambalaya="Locally simmered">Hydra connected</small></span>
             <span class="chevron">⌄</span>
           </button>
         </div>
@@ -61,28 +74,28 @@
             </div>
           </div>
           <div class="topbar-actions">
-            <button class="timeline-button browser-button" id="browserButton" type="button" aria-controls="browserPanel" aria-expanded="false" title="Watch the agents' browser in this chat" disabled>Browser<span class="browser-dot" aria-label="New browser activity" hidden></span></button>
-            <button class="timeline-button" id="commandButton" type="button" aria-controls="commandPanel" aria-expanded="false" title="Run a shell command in this chat's folder" disabled>Terminal</button>
+            <button class="timeline-button browser-button" id="browserButton" type="button" aria-controls="browserPanel" aria-expanded="false" title="Watch the agents' browser in this chat" disabled><svg class="louisiana-icon jambalaya-only " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-paddle" /></svg><span class="desktop-brand-label" data-jambalaya="Bayou browser" data-default="Browser">Browser</span><span class="browser-dot" aria-label="New browser activity" hidden></span><span class="mobile-brand-label jambalaya-only">Browser</span></button>
+            <button class="timeline-button" id="commandButton" type="button" aria-controls="commandPanel" aria-expanded="false" title="Run a shell command in this chat's folder" disabled><svg class="louisiana-icon jambalaya-only " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-pot" /></svg><span class="desktop-brand-label" data-default="Terminal" data-jambalaya="Cast-iron terminal">Terminal</span><span class="mobile-brand-label jambalaya-only">Terminal</span></button>
             <section class="live-progress command-panel" id="commandPanel" aria-label="Run command" hidden>
-              <div class="progress-heading"><strong>Run command</strong><span class="command-mode"></span></div>
+              <div class="progress-heading"><strong data-default="Run command" data-jambalaya="Fire up the terminal">Run command</strong><span class="command-mode"></span></div>
               <form class="command-form">
                 <input class="command-input" type="text" aria-label="Command" placeholder="git status" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
                 <button class="command-run" type="submit">Run</button>
               </form>
               <pre class="command-output" aria-label="Command output" aria-live="polite" hidden></pre>
-              <div class="command-footer"><small class="command-status"></small><button class="command-clear" type="button" disabled>Clear</button><button class="command-add" type="button" disabled>Add to message</button></div>
+              <div class="command-footer"><small class="command-status"></small><button class="command-clear" type="button" disabled>Clear</button><button class="command-add" type="button" disabled data-default="Add to message" data-jambalaya="Serve with your message">Add to message</button></div>
               <small class="progress-note">Non-interactive: no prompts or full-screen programs. Stops after 10 minutes, or when this page disconnects. ↑/↓ recalls earlier commands.</small>
             </section>
-            <button class="timeline-button" id="timelineButton" type="button" aria-controls="liveProgressPanel" aria-expanded="false" disabled>Timeline</button>
+            <button class="timeline-button" id="timelineButton" type="button" aria-controls="liveProgressPanel" aria-expanded="false" disabled><svg class="louisiana-icon jambalaya-only " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-trumpet" /></svg><span class="desktop-brand-label" data-default="Timeline" data-jambalaya="The second line">Timeline</span><span class="mobile-brand-label jambalaya-only">Parade</span></button>
             <button class="live-state" id="liveState" type="button" aria-controls="liveProgressPanel" aria-expanded="false" title="Agent progress" disabled><i aria-hidden="true"></i><span role="status" aria-live="polite" aria-atomic="true">Connecting</span><b aria-hidden="true">⌄</b></button>
             <section class="live-progress" id="liveProgressPanel" aria-label="Turn timeline" hidden>
-              <div class="progress-heading"><strong>Turn timeline</strong><label for="progressTurnSelect">View</label><select class="progress-turn-select" id="progressTurnSelect" aria-label="Select turn"></select><span class="progress-clock"></span></div>
-              <p class="progress-no-turns" hidden>No timed turns recorded for this chat yet. Send a message from this Console to start the timeline.</p>
+              <div class="progress-heading"><strong data-default="Turn timeline" data-jambalaya="Second-line timeline">Turn timeline</strong><label for="progressTurnSelect">View</label><select class="progress-turn-select" id="progressTurnSelect" aria-label="Select turn"></select><span class="progress-clock"></span></div>
+              <p class="progress-no-turns" hidden data-default="No timed turns recorded for this chat yet. Send a message from this Console to start the timeline." data-jambalaya="The second line has not stepped off yet. Send a message to start this chat’s timeline.">No timed turns recorded for this chat yet. Send a message from this Console to start the timeline.</p>
               <div class="progress-board">
                 <div class="progress-card progress-primary">
                   <div class="progress-card-head"><strong>Unreal Agent</strong><span class="progress-turn-label"></span><span class="progress-outcome"></span></div>
                   <div class="progress-lanes"></div>
-                  <p class="progress-empty" hidden>No tool calls observed in this turn.</p>
+                  <p class="progress-empty" hidden data-default="No tool calls observed in this turn." data-jambalaya="No cast-iron tools fired up in this turn.">No tool calls observed in this turn.</p>
                   <div class="progress-axis" aria-hidden="true"></div>
                 </div>
               </div>
@@ -95,32 +108,35 @@
 
         <section class="conversation" id="conversation">
           <div class="empty-state" id="emptyState">
-            <div class="empty-orbit" aria-hidden="true"><svg class="brand-mark large" viewBox="0 0 32 32" focusable="false">
+            <div class="empty-orbit" aria-hidden="true"><svg class="default-only brand-mark large" viewBox="0 0 32 32" focusable="false">
               <path class="brand-steam" d="M10 10c-1.5-2.1 1.5-2.7 0-5M16 10c-1.5-2.1 1.5-2.7 0-5M22 10c-1.5-2.1 1.5-2.7 0-5" />
               <path class="brand-bowl" d="M4.5 14.25h23c-.75 7.4-5.25 11.25-11.5 11.25S5.25 21.65 4.5 14.25Z" />
               <path class="brand-rim" d="M4 14.25h24c0 2.1-5.37 3.8-12 3.8s-12-1.7-12-3.8Z" />
               <circle cx="10" cy="14.25" r="1.05" /><circle cx="16" cy="15.5" r="1.05" /><circle cx="22" cy="14.25" r="1.05" />
-            </svg></div>
+            </svg><svg class="louisiana-icon jambalaya-only hero-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-fleur" /></svg></div>
+            <div class="jambalaya-badge jambalaya-only"><svg class="louisiana-icon jambalaya-only " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-pepper" /></svg> EXTRA SPICY · LOUISIANA MADE</div>
             <p class="eyebrow" id="brandEyebrow">UNREAL AGENT CONSOLE</p>
             <h2 id="welcomeTitle">Your work,<br /><em>without the clutter.</em></h2>
             <p id="welcomeCopy">Add a project folder to get started. Each project keeps its chats together.</p>
+            <p class="jambalaya-motto jambalaya-only">Laissez les bons temps rouler.</p>
+            <p class="jambalaya-parishes jambalaya-only">Acadiana · New Orleans · Down the bayou</p>
             <div class="starter-actions">
-              <button id="starterNewChat" type="button"><span>⌘</span><strong>Start a chat</strong><small>Work in the selected project</small></button>
-              <button id="starterAddProject" type="button"><span>▰</span><strong>Add a project</strong><small>Choose a folder on this Mac</small></button>
+              <button id="starterNewChat" type="button"><span class="default-only">⌘</span><svg class="louisiana-icon jambalaya-only " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-pot" /></svg><strong data-default="Start a chat" data-jambalaya="Start a pot · New chat">Start a chat</strong><small data-default="Work in the selected project" data-jambalaya="Pull up a chair at your camp">Work in the selected project</small></button>
+              <button id="starterAddProject" type="button"><span class="default-only">▰</span><svg class="louisiana-icon jambalaya-only " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-fleur" /></svg><strong data-default="Add a project" data-jambalaya="Set up camp · Add project">Add a project</strong><small data-default="Choose a folder on this Mac" data-jambalaya="Pick a patch of bayou on this Mac">Choose a folder on this Mac</small></button>
             </div>
           </div>
           <div class="messages" id="messages" hidden></div>
-          <button type="button" class="jump-latest" id="jumpLatest" hidden>↓ Latest</button>
+          <button type="button" class="jump-latest" id="jumpLatest" hidden><span aria-hidden="true">↓</span> <span data-default="Latest" data-jambalaya="Front of the parade">Latest</span></button>
         </section>
 
         <footer class="composer-wrap">
           <section id="approvalPanel" class="approval-panel" aria-label="Pending approval requests" aria-live="polite" hidden></section>
           <div class="control-strip" id="controlStrip">
-            <button type="button" class="mobile-controls" id="mobileControls" aria-controls="controlPopover" aria-haspopup="true" aria-expanded="false" disabled><span class="mobile-controls-icon" aria-hidden="true">☷</span><span class="mobile-controls-copy"><strong>Chat settings</strong><span class="mobile-controls-values"><small id="mobileModelLabel">Model</small><span aria-hidden="true">·</span><small id="mobileReasoningLabel">Medium</small></span></span><b aria-hidden="true">⌄</b></button>
+            <button type="button" class="mobile-controls" id="mobileControls" aria-controls="controlPopover" aria-haspopup="true" aria-expanded="false" disabled><span class="mobile-controls-icon" aria-hidden="true">☷</span><span class="mobile-controls-copy"><strong data-default="Chat settings" data-jambalaya="Season this chat">Chat settings</strong><span class="mobile-controls-values"><small id="mobileModelLabel">Model</small><span aria-hidden="true">·</span><small id="mobileReasoningLabel">Medium</small></span></span><b aria-hidden="true">⌄</b></button>
             <button type="button" id="modelControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span class="control-dot lime"></span><span id="modelLabel">Model</span><b>⌄</b></button>
             <button type="button" id="reasoningControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span>◌</span><span id="reasoningLabel">Medium</span><b>⌄</b></button>
             <button type="button" id="permissionControl" aria-controls="controlPopover" aria-haspopup="listbox" aria-expanded="false" disabled><span>◫</span><span id="permissionLabel">Workspace</span><b>⌄</b></button>
-            <button type="button" class="usage-control" id="usageControl" aria-controls="controlPopover" aria-haspopup="true" aria-expanded="false" title="View token and cost usage" disabled><span id="usageMetricName">Usage</span><span class="usage-label" id="usageLabel">$0.00</span><b>⌄</b></button>
+            <button type="button" class="usage-control" id="usageControl" aria-controls="controlPopover" aria-haspopup="true" aria-expanded="false" title="View token and cost usage" disabled><span id="usageMetricName" data-default="Usage" data-jambalaya="The parish ledger · Usage">Usage</span><span class="usage-label" id="usageLabel">$0.00</span><b>⌄</b></button>
             <div class="control-popover" id="controlPopover" role="region" hidden></div>
           </div>
           <section class="followup-queue" id="followupQueue" aria-label="Queued messages" hidden></section>
@@ -129,21 +145,21 @@
             <textarea id="prompt" rows="1" enterkeyhint="enter" placeholder="Ask Unreal Agent anything" aria-label="Message Unreal Agent" disabled></textarea>
             <div class="composer-actions">
               <input id="imagePicker" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
-              <button class="attach-button" id="attachImage" type="button" aria-label="Attach images" disabled title="Attach images">＋</button>
+              <button class="attach-button" id="attachImage" type="button" aria-label="Attach images" disabled title="Attach images"><span class="default-only">＋</span><svg class="louisiana-icon jambalaya-only" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-pepper"/></svg></button>
               <span class="composer-context" id="composerContext">Select a task to begin</span>
               <button class="hide-keyboard-button" id="hideKeyboard" type="button" hidden aria-label="Hide keyboard" title="Hide keyboard without sending"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="12" rx="2"/><path d="M7 7h.01M11 7h.01M15 7h.01M17 7h.01M7 10h.01M11 10h.01M15 10h.01M17 10h.01M8 12h8M9 19l3 3 3-3"/></svg></button>
               <button class="stop-button" id="stopTask" type="button" aria-label="Stop task" title="Stop task" hidden>■</button>
-              <button class="send-button" type="submit" aria-label="Send steering message" title="Send a message or steer the active task" disabled>↑</button>
+              <button class="send-button" type="submit" aria-label="Send steering message" title="Send a message or steer the active task" disabled><span class="default-only">↑</span><svg class="louisiana-icon jambalaya-only" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#la-paddle"/></svg></button>
             </div>
           </form>
-          <div class="drop-overlay" id="dropOverlay" aria-hidden="true"><span>Drop images to add them to your message</span></div>
+          <div class="drop-overlay" id="dropOverlay" aria-hidden="true"><span data-default="Drop images to add them to your message" data-jambalaya="Drop your images in the pot to attach them">Drop images to add them to your message</span></div>
           <p class="footnote" id="brandFootnote">Unreal Agent runs locally. Review important changes before shipping.</p>
         </footer>
       </main>
 
       <aside class="browser-panel" id="browserPanel" aria-label="Agent browser" hidden>
         <div class="browser-panel-head">
-          <strong>Browser</strong>
+          <strong data-default="Browser" data-jambalaya="Bayou browser">Browser</strong>
           <select class="browser-agent" aria-label="Show the browser of" hidden></select>
           <button class="icon-button quiet browser-close" type="button" aria-label="Close browser panel" title="Close">×</button>
         </div>
@@ -157,20 +173,24 @@
           </form>
           <small class="browser-signin-status" aria-live="polite"></small>
         </details>
-        <div class="browser-addressbar"><span class="browser-address">No page open</span><span class="browser-page-title"></span></div>
+        <div class="browser-addressbar"><span class="browser-address" data-default="No page open" data-jambalaya="No boat on the water yet">No page open</span><span class="browser-page-title"></span></div>
         <div class="browser-frame">
-          <img alt="" title="Open full size" hidden />
-          <p class="browser-frame-empty">When an agent opens a page, it appears here.</p>
-          <div class="browser-frame-bar"><span class="browser-viewing" hidden></span><button class="browser-live" type="button" hidden>Back to latest</button></div>
+          <img alt="" title="Open full size" tabindex="0" role="button" hidden />
+          <p class="browser-frame-empty" data-default="When an agent opens a page, it appears here." data-jambalaya="When the krewe opens a page, it docks right here.">When an agent opens a page, it appears here.</p>
+          <div class="browser-frame-bar"><span class="browser-viewing" hidden></span><button class="browser-live" type="button" hidden data-default="Back to latest" data-jambalaya="Back to the front of the parade">Back to latest</button></div>
         </div>
         <div class="browser-steps-head">Steps <small>newest first</small></div>
         <div class="browser-steps"></div>
-        <p class="browser-empty">No browser activity in this chat yet. Agents use the browser to check pages and local apps.</p>
+        <p class="browser-empty" data-default="No browser activity in this chat yet. Agents use the browser to check pages and local apps." data-jambalaya="The bayou is quiet. Browser visits from the krewe will appear here.">No browser activity in this chat yet. Agents use the browser to check pages and local apps.</p>
       </aside>
     </div>
+    <dialog class="browser-lightbox" id="browserLightbox" aria-label="Full-size browser screenshot">
+      <button class="browser-lightbox-close" type="button" aria-label="Close full-size screenshot" title="Close (Esc)">×</button>
+      <img alt="" />
+    </dialog>
     <dialog class="modal chat-search-modal" id="chatSearchDialog" aria-labelledby="chatSearchTitle">
       <div class="modal-card">
-        <div class="modal-heading"><div><p>FIND A CONVERSATION</p><h2 id="chatSearchTitle">Search chats</h2></div><button type="button" id="closeChatSearch" aria-label="Close search">×</button></div>
+        <div class="modal-heading"><div><p data-default="FIND A CONVERSATION" data-jambalaya="FOLLOW THE SCENT">FIND A CONVERSATION</p><h2 id="chatSearchTitle" data-default="Search chats" data-jambalaya="Find a pot · Search chats">Search chats</h2></div><button type="button" id="closeChatSearch" aria-label="Close search">×</button></div>
         <input id="chatSearchInput" type="search" maxlength="120" autocomplete="off" placeholder="Search titles and messages…" aria-label="Search chat titles and messages" />
         <p class="chat-search-status" id="chatSearchStatus" role="status" aria-live="polite">Type to search your chats.</p>
         <div class="chat-search-results" id="chatSearchResults" aria-label="Search results"></div>
@@ -179,44 +199,44 @@
     <dialog class="modal" id="projectDialog" aria-labelledby="projectDialogTitle">
       <form class="modal-card" id="projectForm">
         <div class="modal-heading"><div><p id="projectDialogEyebrow">NEW PROJECT</p><h2 id="projectDialogTitle">Add a project folder</h2></div><button type="button" id="closeProjectDialog" aria-label="Close">×</button></div>
-        <label id="projectNameField" hidden>Project name<input id="projectName" maxlength="100" autocomplete="off" /></label>
-        <label id="projectPathField">Folder path<input id="projectPath" autocomplete="off" placeholder="/Users/you/Projects/my-app" required /></label>
+        <label id="projectNameField" hidden><span data-default="Project name" data-jambalaya="Camp name · Project name">Project name</span><input id="projectName" maxlength="100" autocomplete="off" /></label>
+        <label id="projectPathField"><span data-default="Folder path" data-jambalaya="Camp location · Folder path">Folder path</span><input id="projectPath" autocomplete="off" placeholder="/Users/you/Projects/my-app" required /></label>
         <button class="browse-folder" id="browseFolder" type="button">Browse folders…</button>
         <p class="modal-note" id="projectDialogNote">The folder is used as the workspace source for chats in this project. Existing chats in that folder will appear here too.</p>
-        <div class="modal-actions"><button class="danger" id="deleteProject" type="button" hidden>Delete project</button><span></span><button type="button" id="cancelProject">Cancel</button><button class="primary" id="saveProject" type="submit">Add project</button></div>
+        <div class="modal-actions"><button class="danger" id="deleteProject" type="button" hidden>Delete project</button><span></span><button type="button" id="cancelProject" data-default="Cancel" data-jambalaya="Cancel · Pas aujourd’hui">Cancel</button><button class="primary" id="saveProject" type="submit">Add project</button></div>
       </form>
     </dialog>
     <dialog class="modal" id="deleteProjectDialog" aria-labelledby="deleteProjectTitle" aria-describedby="deleteProjectCopy">
       <div class="modal-card">
         <div class="modal-heading"><div><p>DELETE PROJECT</p><h2 id="deleteProjectTitle">Delete this project?</h2></div><button type="button" id="closeDeleteProject" aria-label="Close">×</button></div>
         <p class="modal-note" id="deleteProjectCopy">The project will be removed from the sidebar. Its folder, files, and chat history will not be deleted.</p>
-        <div class="modal-actions"><button type="button" id="cancelDeleteProject">Cancel</button><button class="danger" id="confirmDeleteProject" type="button">Delete project</button></div>
+        <div class="modal-actions"><button type="button" id="cancelDeleteProject" data-default="Cancel" data-jambalaya="Cancel · Pas aujourd’hui">Cancel</button><button class="danger" id="confirmDeleteProject" type="button">Delete project</button></div>
       </div>
     </dialog>
     <dialog class="modal" id="deleteChatDialog" aria-labelledby="deleteChatTitle" aria-describedby="deleteChatCopy">
       <div class="modal-card">
         <div class="modal-heading"><div><p>DELETE CHAT</p><h2 id="deleteChatTitle">Delete this chat?</h2></div><button type="button" id="closeDeleteChatDialog" aria-label="Close">×</button></div>
         <p class="modal-note" id="deleteChatCopy">This permanently deletes the conversation and its history. Your project files will not be changed.</p>
-        <div class="modal-actions"><button type="button" id="cancelDeleteChat">Cancel</button><button class="danger" id="confirmDeleteChat" type="button">Delete chat</button></div>
+        <div class="modal-actions"><button type="button" id="cancelDeleteChat" data-default="Cancel" data-jambalaya="Cancel · Pas aujourd’hui">Cancel</button><button class="danger" id="confirmDeleteChat" type="button">Delete chat</button></div>
       </div>
     </dialog>
     <dialog class="modal preferences-modal" id="preferencesDialog" aria-labelledby="preferencesTitle">
       <form method="dialog" class="modal-card preferences-card" id="preferencesForm">
-        <div class="modal-heading"><div><p>YOUR WORKSPACE</p><h2 id="preferencesTitle">Settings</h2></div><button type="button" id="closePreferences" aria-label="Close settings">×</button></div>
+        <div class="modal-heading"><div><p data-default="YOUR WORKSPACE" data-jambalaya="YOUR LITTLE CORNER OF LOUISIANA">YOUR WORKSPACE</p><h2 id="preferencesTitle" data-default="Settings" data-jambalaya="The krewe house · Settings">Settings</h2></div><button type="button" id="closePreferences" aria-label="Close settings">×</button></div>
         <div class="settings-tabs" role="tablist" aria-label="Settings sections">
-          <button type="button" id="dashboardTab" role="tab" aria-selected="true" aria-controls="dashboardPanel" data-settings-tab="dashboard">Usage dashboard</button>
-          <button type="button" id="modelsTab" role="tab" aria-selected="false" aria-controls="modelsPanel" data-settings-tab="models" tabindex="-1">Providers &amp; models</button>
-          <button type="button" id="agentsTab" role="tab" aria-selected="false" aria-controls="agentsPanel" data-settings-tab="agents" tabindex="-1">Agents</button>
-          <button type="button" id="generalTab" role="tab" aria-selected="false" aria-controls="generalPanel" data-settings-tab="general" tabindex="-1">General</button>
-          <button type="button" id="capabilitiesTab" role="tab" aria-selected="false" aria-controls="capabilitiesPanel" data-settings-tab="capabilities" tabindex="-1">Capabilities</button>
+          <button type="button" id="dashboardTab" role="tab" aria-selected="true" aria-controls="dashboardPanel" data-settings-tab="dashboard" data-default="Usage dashboard" data-jambalaya="The parish ledger · Usage">Usage dashboard</button>
+          <button type="button" id="modelsTab" role="tab" aria-selected="false" aria-controls="modelsPanel" data-settings-tab="models" tabindex="-1" data-default="Providers &amp; models" data-jambalaya="The spice rack · Providers &amp; models">Providers &amp; models</button>
+          <button type="button" id="agentsTab" role="tab" aria-selected="false" aria-controls="agentsPanel" data-settings-tab="agents" tabindex="-1" data-default="Agents" data-jambalaya="Your krewe · Agents">Agents</button>
+          <button type="button" id="generalTab" role="tab" aria-selected="false" aria-controls="generalPanel" data-settings-tab="general" tabindex="-1" data-default="General" data-jambalaya="House recipe · General">General</button>
+          <button type="button" id="capabilitiesTab" role="tab" aria-selected="false" aria-controls="capabilitiesPanel" data-settings-tab="capabilities" tabindex="-1" data-default="Capabilities" data-jambalaya="The tackle box · Capabilities">Capabilities</button>
         </div>
         <section class="settings-panel" id="dashboardPanel" role="tabpanel" aria-labelledby="dashboardTab">
-          <div class="settings-section-heading"><h3>Usage dashboard</h3><p>Local response totals across saved chats · weeks start Monday (UTC).</p></div>
+          <div class="settings-section-heading"><h3 data-default="Usage dashboard" data-jambalaya="The parish ledger · Usage">Usage dashboard</h3><p>Local response totals across saved chats · weeks start Monday (UTC).</p></div>
           <p id="dashboardStatus" class="theme-hint" role="status" aria-live="polite">Open this tab to load usage.</p>
           <div id="dashboardCards" class="dashboard-cards" aria-live="polite"></div>
         </section>
         <section class="settings-panel models-panel" id="modelsPanel" role="tabpanel" aria-labelledby="modelsTab" hidden>
-          <p class="theme-hint">Choose the primary agent for new chats in <strong>Agents</strong>. Use a model's <strong>Use as default</strong> button to make it the primary agent's model.</p>
+          <p class="theme-hint">Choose the primary agent for new chats in <strong data-default="Agents" data-jambalaya="Your krewe · Agents">Agents</strong>. Use a model's <strong>Use as default</strong> button to make it the primary agent's model.</p>
           <div class="settings-section-heading catalog-heading"><h3>Model catalog</h3><button type="button" class="add-local-provider" id="addLocalProvider">＋ Add local models</button></div>
           <div class="provider-tabs" id="providerTabs" role="tablist" aria-label="Model providers"></div>
           <div class="provider-catalog" id="providerCatalog" role="tabpanel" aria-label="Available models">
@@ -237,26 +257,26 @@
           </div>
         </section>
         <section class="settings-panel agents-panel" id="agentsPanel" role="tabpanel" aria-labelledby="agentsTab" hidden>
-          <div class="settings-section-heading"><h3>Primary agent</h3><p>Runs every new chat and decides when to delegate.</p></div>
+          <div class="settings-section-heading"><h3 data-default="Primary agent" data-jambalaya="Head chef · Primary agent">Primary agent</h3><p>Runs every new chat and decides when to delegate.</p></div>
           <div class="model-defaults primary-agent">
             <label>Provider<select name="defaultProvider" aria-label="Primary agent provider" disabled></select></label>
             <label>Model<select name="defaultModel" aria-label="Primary agent model" disabled></select></label>
             <label>Reasoning<select name="defaultThoughtLevel" aria-label="Primary agent reasoning effort" disabled><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option><option value="max">Max</option></select></label>
           </div>
           <p class="theme-hint" id="defaultModelHint">Existing chats keep their provider and model.</p>
-          <div class="settings-section-heading catalog-heading"><h3>Subagents</h3><div class="subagent-actions"><button type="button" class="add-local-provider" id="addSubagentPresets">Add all five</button><button type="button" class="add-local-provider" id="sameModelForAll" hidden>Same model for all…</button><select class="add-local-provider subagent-add" id="addSubagent" aria-label="Add subagent"><option value="">＋ Add subagent</option></select></div></div>
-          <label class="switch-row"><span>Let the primary agent use subagents<small>It delegates self-contained tasks and reads back only each subagent's report</small></span><input type="checkbox" name="agentsEnabled" /></label>
+          <div class="settings-section-heading catalog-heading"><h3 data-default="Subagents" data-jambalaya="The sous-chef krewe · Subagents">Subagents</h3><div class="subagent-actions"><button type="button" class="add-local-provider" id="addSubagentPresets">Add all five</button><button type="button" class="add-local-provider" id="sameModelForAll" hidden>Same model for all…</button><select class="add-local-provider subagent-add" id="addSubagent" aria-label="Add subagent"><option value="">＋ Add subagent</option></select></div></div>
+          <label class="switch-row"><span><span data-default="Let the primary agent use subagents" data-jambalaya="Let the head chef call in the krewe">Let the primary agent use subagents</span><small>It delegates self-contained tasks and reads back only each subagent's report</small></span><input type="checkbox" name="agentsEnabled" /></label>
           <div class="delegation-setting">
-            <div class="delegation-heading"><span>How readily to delegate</span><strong id="delegationName">Balanced</strong></div>
+            <div class="delegation-heading"><span data-default="How readily to delegate" data-jambalaya="How many hands in the kitchen?">How readily to delegate</span><strong id="delegationName">Balanced</strong></div>
             <input type="range" name="agentsDelegation" min="1" max="5" step="1" value="3" list="delegationTicks" aria-label="How readily the primary agent delegates" aria-describedby="delegationDescription" />
             <datalist id="delegationTicks"><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option></datalist>
-            <div class="delegation-scale" aria-hidden="true"><span>Primary does more</span><span>Subagents do more</span></div>
+            <div class="delegation-scale" aria-hidden="true"><span data-default="Primary does more" data-jambalaya="Head chef takes the lead">Primary does more</span><span data-default="Subagents do more" data-jambalaya="Bring in the whole krewe">Subagents do more</span></div>
             <p class="theme-hint" id="delegationDescription"></p>
             <p class="theme-hint">Delegating more saves primary-model tokens only when your subagents run on cheaper models.</p>
           </div>
           <label class="setting-select"><span>Subagents running at once, per chat</span><select name="agentsMaxConcurrent" aria-label="Subagents running at once"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
-          <fieldset class="swarm-setting"><legend>Swarms</legend>
-            <label class="switch-row"><span>Allow agent swarms<small>Several subagents work on one problem at once and message each other to share findings, challenge claims and agree on an answer. Costs several times a single subagent.</small></span><input type="checkbox" name="swarmEnabled" /></label>
+          <fieldset class="swarm-setting"><legend data-default="Swarms" data-jambalaya="The brass band · Swarms">Swarms</legend>
+            <label class="switch-row"><span><span data-default="Allow agent swarms" data-jambalaya="Strike up the brass band · Allow swarms">Allow agent swarms</span><small>Several subagents work on one problem at once and message each other to share findings, challenge claims and agree on an answer. Costs several times a single subagent.</small></span><input type="checkbox" name="swarmEnabled" /></label>
             <label class="setting-select"><span>When to use a swarm</span><select name="swarmUse" aria-label="When to use a swarm"><option value="asked">Only when I ask for one</option><option value="hard">When I ask, or on hard problems</option></select></label>
             <label class="setting-select"><span>Agents per swarm, at most</span><select name="swarmSize" aria-label="Agents per swarm"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
             <label class="setting-select"><span>Messages per swarm, at most</span><select name="swarmMessages" aria-label="Messages per swarm"><option value="20">20</option><option value="40">40</option><option value="60">60</option><option value="100">100</option><option value="150">150</option></select></label>
@@ -267,30 +287,30 @@
           <p class="theme-hint" id="subagentHint">Subagents work in the chat's project with their own model and history. They never get more access than the chat: Read only subagents can't edit files, and editing subagents stay inside the workspace sandbox. Their usage counts toward the chat. Changes apply to the next delegation.</p>
         </section>
         <section class="settings-panel" id="generalPanel" role="tabpanel" aria-labelledby="generalTab" hidden>
-        <fieldset><legend>Theme</legend><div class="segmented theme-options"><label><input type="radio" name="theme" value="system" />System</label><label><input type="radio" name="theme" value="light" />Light</label><label><input type="radio" name="theme" value="dark" />Dark</label><label><input type="radio" name="theme" value="warm" />Warm</label></div><p class="theme-hint">System follows your Mac’s appearance automatically.</p></fieldset>
-        <fieldset><legend>Accent</legend><div class="swatches"><label><input type="radio" name="accent" value="lime" /><i class="lime"></i>Lime</label><label><input type="radio" name="accent" value="blue" /><i class="blue"></i>Blue</label><label><input type="radio" name="accent" value="amber" /><i class="amber"></i>Amber</label></div></fieldset>
-        <fieldset><legend>Identity</legend><label class="switch-row brand-switch"><span>Jambalaya Agent mode<small>Rename the assistant and season the interface with a warm, festive palette</small></span><input type="checkbox" name="jambalayaMode" /></label></fieldset>
-        <fieldset><legend>Conversation</legend><label class="switch-row"><span>Show agent reasoning<small>Keep thought sections visible</small></span><input type="checkbox" name="showThoughts" /></label></fieldset>
-        <fieldset><legend>Usage metrics</legend>
+        <fieldset><legend data-default="Theme" data-jambalaya="Bayou skies · Theme">Theme</legend><div class="segmented theme-options"><label><input type="radio" name="theme" value="system" />System</label><label><input type="radio" name="theme" value="light" />Light</label><label><input type="radio" name="theme" value="dark" />Dark</label><label><input type="radio" name="theme" value="warm" />Warm</label></div><p class="theme-hint">System follows your Mac’s appearance automatically.</p></fieldset>
+        <fieldset><legend data-default="Accent" data-jambalaya="Mardi Gras trim · Accent">Accent</legend><div class="swatches"><label><input type="radio" name="accent" value="lime" /><i class="lime"></i>Lime</label><label><input type="radio" name="accent" value="blue" /><i class="blue"></i>Blue</label><label><input type="radio" name="accent" value="amber" /><i class="amber"></i>Amber</label></div></fieldset>
+        <fieldset><legend data-default="Identity" data-jambalaya="Louisiana soul · Identity">Identity</legend><label class="switch-row brand-switch"><span>Jambalaya Agent mode 🌶<small>Extra spicy: bayou skies, Mardi Gras colors, Louisiana icons, and a whole new house recipe. Same tools and permissions.</small></span><input type="checkbox" name="jambalayaMode" /></label></fieldset>
+        <fieldset><legend data-default="Conversation" data-jambalaya="Around the pot · Conversation">Conversation</legend><label class="switch-row"><span><span data-default="Show agent reasoning" data-jambalaya="Peek at the roux · Agent reasoning">Show agent reasoning</span><small>Keep thought sections visible</small></span><input type="checkbox" name="showThoughts" /></label></fieldset>
+        <fieldset><legend data-default="Usage metrics" data-jambalaya="The parish ledger · Usage metrics">Usage metrics</legend>
           <label class="setting-select"><span>Metric above chat</span><select name="usageMetric" aria-label="Usage metric above chat"><option value="auto">Automatic (subscription for Claude/Codex)</option><option value="subscription">Subscription usage</option><option value="cost">Conversation cost</option></select></label>
           <p class="theme-hint">Subscription percentages are account-wide. The bar shows the five-hour window; open Usage for weekly usage and the change since this chat was created. That change can include other chats or devices, so it is only a thread estimate. Older chats without a starting snapshot begin tracking when first viewed.</p>
           <div class="usage-stats" id="subscriptionSettings" aria-live="polite"></div>
         </fieldset>
-        <fieldset><legend>Background generation</legend>
-          <label class="switch-row"><span>Project memory<small>Keep a compact summary available to other chats in the same project</small></span><input type="checkbox" name="memoryEnabled" /></label>
+        <fieldset><legend data-default="Background generation" data-jambalaya="On the back burner · Background generation">Background generation</legend>
+          <label class="switch-row"><span><span data-default="Project memory" data-jambalaya="The camp recipe book · Memory">Project memory</span><small>Keep a compact summary available to other chats in the same project</small></span><input type="checkbox" name="memoryEnabled" /></label>
           <label class="setting-select"><span>Memory model</span><select name="memoryModel" aria-label="Memory model"></select></label>
-          <label class="switch-row"><span>Automatic chat titles<small>Name new chats after their first response</small></span><input type="checkbox" name="titleEnabled" /></label>
+          <label class="switch-row"><span><span data-default="Automatic chat titles" data-jambalaya="Name each pot · Chat titles">Automatic chat titles</span><small>Name new chats after their first response</small></span><input type="checkbox" name="titleEnabled" /></label>
           <label class="setting-select"><span>Title model</span><select name="titleModel" aria-label="Title model"></select></label>
           <p class="theme-hint">Memory stays project-scoped and is retrieved only when a chat needs prior context. One-off chats are excluded. Local chats use their own model and server for titles and memory.</p>
         </fieldset>
         </section>
         <section class="settings-panel" id="capabilitiesPanel" role="tabpanel" aria-labelledby="capabilitiesTab" hidden>
-        <fieldset><legend>Local capabilities</legend>
+        <fieldset><legend data-default="Local capabilities" data-jambalaya="Local provisions · Capabilities">Local capabilities</legend>
           <label class="switch-row"><span>Apple Notes<small>Search, read, and create notes after approval</small></span><input type="checkbox" name="appleNotes" /></label>
           <label class="switch-row"><span>Apple Calendar<small>Search and create events after approval</small></span><input type="checkbox" name="appleCalendar" /></label>
           <p class="theme-hint">Capabilities are lazy and apply to new chats. macOS asks for Automation access the first time one runs.</p>
         </fieldset>
-        <fieldset><legend>Connections</legend>
+        <fieldset><legend data-default="Connections" data-jambalaya="Docks &amp; connections">Connections</legend>
           <label class="switch-row"><span>Kaneo<small>Read, create, update, label, and move tasks after approval</small></span><input type="checkbox" name="kaneo" /></label>
           <div class="openrouter-key kaneo-connection">
             <label>Kaneo address<input name="kaneoUrl" type="url" placeholder="https://cloud.kaneo.app" autocomplete="off" aria-label="Kaneo address" /></label>
@@ -304,12 +324,12 @@
           <p class="theme-hint" id="toolApprovalHint">Choose "Always allow" on an approval to stop being asked for that tool in every chat. Remove a tool here to be asked again.</p>
         </fieldset>
         </section>
-        <div class="modal-actions"><button type="button" id="cancelPreferences">Cancel</button><button class="primary" id="savePreferences" value="default">Save preferences</button></div>
+        <div class="modal-actions"><button type="button" id="cancelPreferences" data-default="Cancel" data-jambalaya="Cancel · Pas aujourd’hui">Cancel</button><button class="primary" id="savePreferences" value="default" data-default="Save preferences" data-jambalaya="Save the house recipe">Save preferences</button></div>
       </form>
     </dialog>
     <dialog class="modal" id="localProviderDialog" aria-labelledby="localProviderTitle">
       <form class="modal-card local-provider-form" id="localProviderForm">
-        <div class="modal-heading"><div><p>ON YOUR HARDWARE</p><h2 id="localProviderTitle">Add local models</h2></div><button type="button" id="closeLocalProvider" aria-label="Close local connection">×</button></div>
+        <div class="modal-heading"><div><p data-default="ON YOUR HARDWARE" data-jambalaya="HOMEGROWN ON YOUR HARDWARE">ON YOUR HARDWARE</p><h2 id="localProviderTitle" data-default="Add local models" data-jambalaya="Stock your local spice rack">Add local models</h2></div><button type="button" id="closeLocalProvider" aria-label="Close local connection">×</button></div>
         <label>Model tool<select name="localType" aria-label="Local model tool"></select></label>
         <label>Connection name<input name="localName" aria-label="Connection name" maxlength="80" required autocomplete="off" /></label>
         <label>Server address<input name="localBaseUrl" aria-label="Server address" type="url" required placeholder="http://127.0.0.1:8000/v1" autocomplete="off" /></label>
@@ -319,19 +339,19 @@
         <p class="modal-note">Start the server in your model app first. Downloads and model installation stay in that app.</p>
         <div class="local-discovery"><button type="button" id="testLocalProvider">Find models</button><p id="localProviderStatus" role="status" aria-live="polite"></p></div>
         <div class="local-discovered-models" id="localDiscoveredModels" hidden></div>
-        <div class="modal-actions"><button type="button" id="cancelLocalProvider">Cancel</button><button class="primary" type="submit" id="saveLocalProvider">Add connection</button></div>
+        <div class="modal-actions"><button type="button" id="cancelLocalProvider" data-default="Cancel" data-jambalaya="Cancel · Pas aujourd’hui">Cancel</button><button class="primary" type="submit" id="saveLocalProvider">Add connection</button></div>
       </form>
     </dialog>
     <dialog class="modal" id="subagentModelDialog" aria-labelledby="subagentModelTitle">
       <form class="modal-card local-provider-form" id="subagentModelForm">
-        <div class="modal-heading"><div><p>SUBAGENTS</p><h2 id="subagentModelTitle">Use one model for all subagents</h2></div><button type="button" id="closeSubagentModel" aria-label="Close">×</button></div>
+        <div class="modal-heading"><div><p>SUBAGENTS</p><h2 id="subagentModelTitle" data-default="Use one model for all subagents" data-jambalaya="One house seasoning · Model for all subagents">Use one model for all subagents</h2></div><button type="button" id="closeSubagentModel" aria-label="Close">×</button></div>
         <p class="modal-note" id="subagentModelNote"></p>
         <label>Provider<select name="provider" aria-label="Provider for all subagents"></select></label>
         <label>Model<select name="model" aria-label="Model for all subagents"></select></label>
-        <div class="modal-actions"><button type="button" id="cancelSubagentModel">Cancel</button><button class="primary" type="submit" id="applySubagentModel">Apply to all</button></div>
+        <div class="modal-actions"><button type="button" id="cancelSubagentModel" data-default="Cancel" data-jambalaya="Cancel · Pas aujourd’hui">Cancel</button><button class="primary" type="submit" id="applySubagentModel" data-default="Apply to all" data-jambalaya="Season the whole krewe">Apply to all</button></div>
       </form>
     </dialog>
     <div class="toast" id="toast" role="status" hidden></div>
-    <script type="module" src="/app.js?v=46"></script>
+    <script type="module" src="/app.js?v=48"></script>
   </body>
 </html>

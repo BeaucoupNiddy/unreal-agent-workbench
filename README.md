@@ -6,7 +6,7 @@ A ready-to-install package for the Unreal Agent Console: the console front end, 
 
 ## Install and launch
 
-1. Download `Unreal-Agent-1.0.4-macOS-arm64.pkg` and open it. Follow Apple's Installer to put **Unreal Agent.app** in `/Applications`.
+1. Download `Unreal-Agent-1.0.5-macOS-arm64.pkg` and open it. Follow Apple's Installer to put **Unreal Agent.app** in `/Applications`.
 2. Open **Unreal Agent** from Applications.
 3. On first launch, enter your own **OpenRouter API key** and model ID, or choose an existing **Codex** login or **Claude Code** installation and login. You can also connect a local model server in Settings after setup.
 4. The console opens in its own Dock-visible window. Add a project folder or start a new chat, select a model, and send a prompt.
