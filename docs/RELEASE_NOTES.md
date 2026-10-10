@@ -1,3 +1,17 @@
+# Unreal Agent 1.0.4
+
+**Agent browser:** chats, subagents and swarm members can open web pages, click and type, take screenshots, and read console errors and failed requests, each in its own clean browser context. An installed Chrome, Chromium, Edge or Brave is used when present; otherwise a headless browser is downloaded once on first use. Read-only chats can look at pages but not interact.
+
+**Browser side panel:** a Browser button in the chat header shows the latest page each agent sees and every browser step with its status and errors. Subagents and swarm members appear under their own names. This stays on your Mac and is not sent to the model.
+
+**Signed-in sites:** from the Browser panel, Sign in opens a visible browser window where you log in to a site yourself; agents can then use that session. Forget removes a site. Your own Chrome profile and saved passwords are never read.
+
+**Kaneo:** Settings → Capabilities can connect a Kaneo instance with your own API key, stored in your login keychain. New chats can then list, create, update and comment on tasks, move them between columns and projects, and manage labels. This connection has not yet been tested against a live Kaneo account.
+
+**Always allow:** tool approvals add an "Always allow" choice, saved per server and tool. Settings → Capabilities lists those tools with a Remove button.
+
+Also: projects and chats are easier to tell apart in the sidebar, and the app now shows the actual reason when it cannot start. Paid-provider inference and a clean-account macOS installation were not exercised by the automated checks.
+
 # Unreal Agent 1.0.3
 
 **Subagents:** Settings → Agents sets the primary agent for new chats and the subagents it may delegate to. Five built-in subagents are included; each has its own provider, model, reasoning effort and access (Read only, or Can edit files within the workspace sandbox). A delegation slider controls how readily the primary agent hands work off, live task cards show each subagent's progress, and API charges from subagents are counted in the chat's usage.

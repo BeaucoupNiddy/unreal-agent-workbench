@@ -104,5 +104,5 @@ do {
     app.run()
 } catch {
     app.activate(ignoringOtherApps:true)
-    let alert=NSAlert(error:error);alert.messageText="Unreal Agent could not start";alert.runModal();exit(1)
+    let alert=NSAlert(error:error);alert.messageText="Unreal Agent could not start";alert.informativeText=error.localizedDescription;alert.runModal();exit(1)
 }

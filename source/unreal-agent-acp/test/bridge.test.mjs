@@ -78,6 +78,14 @@ test("adds a compact direct route only when Apple productivity is present", () =
   assert.equal(instructions.some((line) => line.includes("do not retry")), true);
 });
 
+test("adds Kaneo routing only when the Kaneo connection is present", () => {
+  assert.equal(capabilityInstructions([{ name: "apple-productivity" }]).some((line) => line.includes("kaneo_projects")), false);
+  const instructions = capabilityInstructions([{ name: "kaneo", command: "/node", args: ["/console/kaneo-mcp.mjs"] }]);
+  assert.equal(instructions.length, 2);
+  assert.match(instructions[1], /kaneo_move_task/);
+  assert.match(instructions[1], /Settings > Capabilities/);
+});
+
 test("maps harness responses and tool activity", () => {
   const response = parseHarnessEvent({
     Kind: "model_response",

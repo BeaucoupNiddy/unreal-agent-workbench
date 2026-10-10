@@ -51,6 +51,8 @@ final class AgentWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert(error: error)
         alert.messageText = "Unreal Agent could not start"
+        // NSAlert(error:) puts the reason in messageText; keep it visible below the title.
+        alert.informativeText = error.localizedDescription
         alert.runModal()
     }
 

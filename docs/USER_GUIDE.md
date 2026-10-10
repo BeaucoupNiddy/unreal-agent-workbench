@@ -12,6 +12,10 @@ Use **Add project** to select a folder. New chats in that project operate within
 
 Closing the browser does not cancel tasks. Reopen the app to reconnect to saved history. The app registers two services for the current macOS user; they start at login. Use the uninstall helper to stop and unregister them.
 
+## Built-in browser
+
+Agents and subagents can open web pages in a private headless browser to test your local apps and sites: they read the page, click and type, take screenshots, and collect console errors and failed network requests. It uses Google Chrome, Chromium, Microsoft Edge or Brave if one is installed (with a separate temporary profile, never your own logins). Otherwise the first time an agent uses the browser, Unreal Agent downloads Playwright's headless Chromium (about 100 MB, once) into `~/Library/Application Support/Unreal Agent ACP/browsers`. Read-only chats can look at pages but not interact with them. To let agents use a site that needs your login, open the Browser panel's **Signed-in sites**, enter the address and choose **Sign in**; sign in in the window that opens, then close it. Agents reuse that session until you choose **Forget**. Your own browser's logins and passwords are never read.
+
 ## Apple Notes and Calendar
 
 New installations leave these integrations off. Enable the ones you want in Preferences. macOS prompts for access when a corresponding tool runs. Notes uses Automation access; Calendar uses Calendar access. Grant only the access you intend to use. These settings do not grant access to someone else's account.

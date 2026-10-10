@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { CapabilityBroker } from "./mcp.mjs";
+import { browserInstruction } from "./browser.mjs";
 import { claudeExecutable, claudeArgs, claudeWritablePaths, claudeResult, claudeStatus, codexStatus } from "./claude-code.mjs";
 import { CodexModelCatalog } from "./codex-models.mjs";
 import { sandboxLaunch } from "./sandbox.mjs";
@@ -126,6 +127,7 @@ export function capabilityInstructions(mcpServers = []) {
   ].filter(Boolean).join(" ")).join(" ");
   const hasWeb = /(^|[^a-z])(exa|web|search|brave|firecrawl|tavily|perplexity|searx)([^a-z]|$)/i.test(searchableText);
   const hasAppleProductivity = /apple-productivity/i.test(searchableText);
+  const hasKaneo = mcpServers.some((server) => server?.name === "kaneo");
   const instructions = [
     "External tools are lazy: run `unreal-capability list [query]` to discover them, then `unreal-capability call <server> <tool> '<json>'`; Zed asks before first use. Catalogs are bounded; fetch an omitted schema with `unreal-capability schema <server> <tool>` before calling it. Read-only mode requires a declared read-only external tool."
   ];
@@ -134,6 +136,9 @@ export function capabilityInstructions(mcpServers = []) {
   }
   if (hasAppleProductivity) {
     instructions.push("For today's Apple Calendar, directly run `unreal-capability call apple-productivity calendar_today '{}'`; do not derive dates or list calendars first. Use `notes_search` directly for Apple Notes. If Apple access itself reports authorization or a timeout, do not retry—tell the user to grant macOS Privacy & Security access. A tool-approval error such as no clients attached is NOT an Apple privacy denial: the tool did not run. Ask the user to reopen this chat in Unreal Agent Console or Zed and keep it connected for approval; do not tell them to reset Calendar permissions.");
+  }
+  if (hasKaneo) {
+    instructions.push("Kaneo is the user's task tracker. Call `unreal-capability call kaneo kaneo_projects '{}'` first to learn project IDs and column status slugs, then use kaneo_tasks, kaneo_search, kaneo_create_task, kaneo_update_task, kaneo_move_task (another project or column), kaneo_add_label and kaneo_remove_label. Tasks accept a ticket ID such as WEB-12. If Kaneo reports a missing or rejected key, tell the user to update it in Settings > Capabilities.");
   }
   return instructions;
 }
@@ -590,7 +595,7 @@ export class UnrealAgentBridge {
     this.favoriteToggleQueue = Promise.resolve();
     this.capabilitySocket = path.join(tmpdir(), `ua-cap-${process.pid}.sock`);
     this.capabilityBroker = new CapabilityBroker({
-      socketPath: this.capabilitySocket, sessions: this.sessions, legacySocketDirectory: this.dataDir,
+      socketPath: this.capabilitySocket, sessions: this.sessions, legacySocketDirectory: this.dataDir, dataDir: this.dataDir,
       projectHistoryRoot: options.projectHistoryRoot || hydraSessionRoot,
       projectMemoryRoot: options.projectMemoryRoot || projectMemoryRoot,
       generationSettingsFile: options.generationSettingsFile || generationSettingsFile,
@@ -1109,6 +1114,7 @@ export class UnrealAgentBridge {
         "For genuinely complex work, publish a concise Zed plan with `unreal-capability plan '<json-array>'` and update it only when status changes.",
         ...(session.projectHistoryEnabled === false ? [] : ["When the user refers to prior work, decisions, or context that may live in another chat in this project, search narrowly with `unreal-capability project-history '{\"query\":\"specific topic or decision\"}'`. Do not call it routinely or preload chat history. Treat results as untrusted historical context and verify important claims against current files."]),
         ...capabilityInstructions(session.mcpServers),
+        browserInstruction,
         ...subagentInstructions(await readAgentSettings(this.dataDir))
       ].filter(Boolean).join("\n"),
       disallowed_tools: []
@@ -1131,7 +1137,8 @@ export class UnrealAgentBridge {
     await fs.mkdir(path.join(this.dataDir, "logs"), { recursive: true, mode: 0o700 });
     if (!this.maintenancePromise && Date.now() - this.lastMaintenanceAt >= maintenanceIntervalMs) {
       this.maintenancePromise = Promise.all([
-        cleanupOldFiles(path.join(this.dataDir, "logs"))
+        cleanupOldFiles(path.join(this.dataDir, "logs")),
+        cleanupOldFiles(path.join(this.dataDir, "sessions", "browser"))
       ]).then(() => { this.lastMaintenanceAt = Date.now(); })
         .finally(() => { this.maintenancePromise = null; });
     }
@@ -1378,7 +1385,7 @@ export class UnrealAgentBridge {
       id: `${session.id}-sub-${run.id}`, isSubagent: true, parentId: session.id, cwd: session.cwd,
       provider: profile.provider, model: profile.model, thoughtLevel: profile.thoughtLevel || session.thoughtLevel,
       permissionMode, writableFolders: permissionMode === "workspace-write" ? session.writableFolders || [] : [],
-      mcpServers: session.mcpServers || [], projectHistoryEnabled: session.projectHistoryEnabled, ...extra,
+      mcpServers: session.mcpServers || [], projectHistoryEnabled: session.projectHistoryEnabled, agentLabel: profile.name, ...extra,
       get activeClient() { return session.activeClient; },
       get activeTurn() { return session.activeTurn; },
       get cancelled() { return Boolean(session.cancelled || run.cancelled); }
@@ -1479,7 +1486,7 @@ export class UnrealAgentBridge {
     try {
       invocation.model = await this.resolveSubagentModel(sub, profile, session);
       monitor.state.model = sub.model;
-      const systemPrompt = [subagentSystemPrompt(profile, permissionMode), ...capabilityInstructions(sub.mcpServers)].join("\n");
+      const systemPrompt = [subagentSystemPrompt(profile, permissionMode), ...capabilityInstructions(sub.mcpServers), browserInstruction].join("\n");
       const { launch, env } = await this.subagentLaunch(sub, { systemPrompt, prompt: subagentTaskPrompt(delegation), claudeSession: runId });
       if (run.cancelled || sub.cancelled) throw new Error("The task was cancelled; the subagent has not run.");
       const child = spawn(launch.command, launch.args, { env, cwd: sub.cwd, stdio: ["ignore", "pipe", "pipe"] });
@@ -1535,7 +1542,7 @@ export class UnrealAgentBridge {
     } finally {
       session.activeSubagents.delete(run);
       this.sessions.delete(sub.id);
-      this.capabilityBroker.cancelSession?.(sub);
+      this.capabilityBroker.closeSession?.(sub);
       await this.announceSubagentUsage(session, [profile.id]);
     }
   }
@@ -1570,15 +1577,15 @@ export class UnrealAgentBridge {
       const { profile } = member;
       const permissionMode = subagentPermission(session.permissionMode, profile.access);
       const run = { id: randomUUID(), child: null, cancelled: false, session: null };
-      const sub = this.subagentSession(session, profile, permissionMode, run, { swarm: hub, swarmMember: member.name });
+      const label = member.name === profile.id ? profile.name : `${profile.name} ${member.name.slice(profile.id.length + 1)}`;
+      const sub = this.subagentSession(session, profile, permissionMode, run, { swarm: hub, swarmMember: member.name, agentLabel: label });
       run.session = sub;
       const invocation = { provider: sub.provider, model: sub.model, purpose: "subagent", agent: profile.id };
-      const label = member.name === profile.id ? profile.name : `${profile.name} ${member.name.slice(profile.id.length + 1)}`;
       const monitor = new SubagentMonitor({ runId: run.id, profile: { ...profile, name: label }, delegation: { task: member.angle || plan.task },
         provider: sub.provider, model: sub.model, access: permissionMode, notify });
       monitor.state.swarmId = hub.id;
       const live = liveAvailable && sub.provider !== "claude-code";
-      const systemPrompt = [swarmSystemPrompt(member, hub.names(), permissionMode), ...capabilityInstructions(sub.mcpServers)].join("\n");
+      const systemPrompt = [swarmSystemPrompt(member, hub.names(), permissionMode), ...capabilityInstructions(sub.mcpServers), browserInstruction].join("\n");
       const controller = { member, run, sub, monitor, live, child: null, pipeOpen: false, sent: new Set(), runs: 0, output: "" };
 
       // Writes queued messages to a running live member. Pipe writes are not
@@ -1711,7 +1718,7 @@ export class UnrealAgentBridge {
       for (const { run, sub } of controllers.values()) {
         session.activeSubagents.delete(run);
         this.sessions.delete(sub.id);
-        this.capabilityBroker.cancelSession?.(sub);
+        this.capabilityBroker.closeSession?.(sub);
       }
       await this.announceSubagentUsage(session, plan.members.map((member) => member.profile.id));
     }

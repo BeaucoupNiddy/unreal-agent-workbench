@@ -1,8 +1,8 @@
-# Verification record — 1.0.3
+# Verification record — 1.0.4
 
 Validation is performed on the Apple Silicon development Mac. This release has not been tested in a separate clean macOS account or VM and has not been notarized.
 
-Checks used for this release (1.0.3):
+Checks used for this release (1.0.4):
 
 - Installer tests: valid launchd XML with spaces/special characters; preserving other Hydra settings; refusing legacy service/agent conflicts without modifying files; fresh and same-location registration planning.
 - Component checks: Agent Console, ACP bridge (including local providers and Claude/Codex status), Apple Productivity MCP, and Harness Chat syntax/tests against the staged source and clean lockfile dependencies.

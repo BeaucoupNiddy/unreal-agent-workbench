@@ -4,6 +4,8 @@ import net from "node:net";
 import path from "node:path";
 import { packageVersion } from "./version.mjs";
 import { searchProjectHistory } from "./project-history.mjs";
+import { BrowserManager } from "./browser.mjs";
+import { addToolApproval, readToolApprovals, toolApprovalsFileName } from "./tool-approvals.mjs";
 
 const webCacheMaxAgeMs = 10 * 60 * 1000;
 const maximumCachedWebQueries = 100;
@@ -253,7 +255,7 @@ export class McpStdioClient {
 }
 
 export class CapabilityBroker {
-  constructor({ socketPath, sessions, legacySocketDirectory, projectHistoryRoot, projectMemoryRoot, generationSettingsFile, requestFolderAccess, delegate, swarm, listAgents }) {
+  constructor({ socketPath, sessions, legacySocketDirectory, projectHistoryRoot, projectMemoryRoot, generationSettingsFile, requestFolderAccess, delegate, swarm, listAgents, browser, dataDir }) {
     this.socketPath = socketPath;
     this.sessions = sessions;
     this.legacySocketDirectory = legacySocketDirectory;
@@ -264,6 +266,8 @@ export class CapabilityBroker {
     this.delegate = delegate;
     this.swarm = swarm;
     this.listAgents = listAgents;
+    this.browser = browser || (dataDir ? new BrowserManager({ dataDir }) : null);
+    this.toolApprovalsFile = dataDir ? path.join(dataDir, toolApprovalsFileName) : null;
     this.server = null;
     this.clients = new Map();
     this.webCache = new Map();
@@ -366,6 +370,7 @@ export class CapabilityBroker {
   async requestToolPermission(session, server, tool, argumentsValue) {
     const approvalKey = `${server.name}/${tool.name}`;
     if (session.approvedCapabilities?.has(approvalKey)) return;
+    if (this.toolApprovalsFile && (await readToolApprovals(this.toolApprovalsFile).catch(() => [])).includes(approvalKey)) return;
     if (!session.activeClient) throw new Error("Unreal tool approval is unavailable: open this chat in Unreal Agent Console or Zed, then ask to try again. The tool has not run; this is not a macOS privacy denial.");
     const toolCallId = `mcp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     let response;
@@ -382,6 +387,7 @@ export class CapabilityBroker {
         options: [
           { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
           { optionId: "allow-always", name: "Allow for this session", kind: "allow_always" },
+          ...(this.toolApprovalsFile ? [{ optionId: "allow-forever", name: "Always allow", kind: "allow_always" }] : []),
           { optionId: "reject", name: "Reject", kind: "reject_once" }
         ]
       });
@@ -393,10 +399,12 @@ export class CapabilityBroker {
     }
     const selected = response?.outcome?.optionId;
     if (response?.outcome?.outcome !== "selected" || !selected?.startsWith("allow")) throw new Error("The MCP tool call was not approved.");
-    if (selected === "allow-always") {
+    if (selected === "allow-always" || selected === "allow-forever") {
       session.approvedCapabilities ||= new Set();
       session.approvedCapabilities.add(approvalKey);
     }
+    // Saving is best effort: the approval already applies to this chat.
+    if (selected === "allow-forever") await addToolApproval(this.toolApprovalsFile, approvalKey).catch(() => {});
   }
 
   async invokeTool(session, server, tool, argumentsValue, { skipPermission = false } = {}) {
@@ -433,6 +441,13 @@ export class CapabilityBroker {
       return request.action === "swarm_send"
         ? session.swarm.send(session.swarmMember, { to: request.to, message: request.message })
         : session.swarm.drain(session.swarmMember);
+    }
+    if (request.action === "browser") {
+      if (!this.browser) throw new Error("The browser is unavailable in this broker.");
+      if (session.activeTurn?.cancelled || session.cancelled) throw new Error("The task was cancelled; the browser step has not run.");
+      const notify = (text) => Promise.resolve(session.activeClient?.notify?.("session/update", { sessionId: session.id, update: {
+        sessionUpdate: "agent_message_chunk", content: { type: "text", text } } })).catch(() => {});
+      return this.browser.run(session, request.arguments || {}, { notify });
     }
     if (request.action === "delegate") {
       if (!this.delegate) throw new Error("Subagents are unavailable in this broker.");
@@ -571,6 +586,8 @@ export class CapabilityBroker {
   closeSession(session) {
     this.cancelSession(session);
     // Processes are shared, but their individual requests belong to a task.
+    // Each chat or subagent has its own browser context, closed with it.
+    void this.browser?.closeSession(session.id);
   }
 
   cancelSession(session) {
@@ -586,6 +603,7 @@ export class CapabilityBroker {
   async close() {
     for (const client of this.clients.values()) client.close();
     this.clients.clear();
+    await this.browser?.close();
     if (this.server) await new Promise((resolve) => this.server.close(resolve));
     this.server = null;
     await fs.unlink(this.socketPath).catch(() => {});

@@ -244,3 +244,23 @@ test('discovery is UTF-8 byte bounded and a failing server does not erase health
   assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 16_000);
   assert.ok(result.every((tool) => tool.schemaAvailable === true));
 });
+
+test('"Always allow" is remembered across chats and only for that tool', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'tool-approvals-'));
+  const broker = new CapabilityBroker({ socketPath: '/unused', sessions: new Map(), dataDir, browser: {} });
+  const prompts = [];
+  const chat = (answer) => ({ id: `chat-${prompts.length}`, activeClient: { request: async (_, params) => {
+    prompts.push(params.options.map((option) => option.optionId));
+    return { outcome: { outcome: 'selected', optionId: answer } };
+  } } });
+  await broker.requestToolPermission(chat('allow-forever'), { name: 'kaneo' }, { name: 'kaneo_projects' }, {});
+  assert.deepEqual(prompts[0], ['allow-once', 'allow-always', 'allow-forever', 'reject']);
+  await broker.requestToolPermission(chat('reject'), { name: 'kaneo' }, { name: 'kaneo_projects' }, {});
+  assert.equal(prompts.length, 1, 'a new chat does not ask again');
+  await assert.rejects(broker.requestToolPermission(chat('reject'), { name: 'kaneo' }, { name: 'kaneo_create_task' }, {}), /not approved/);
+  assert.equal(prompts.length, 2, 'other tools still ask');
+  const { readToolApprovals, removeToolApprovals } = await import('../src/tool-approvals.mjs');
+  assert.deepEqual(await readToolApprovals(path.join(dataDir, 'tool-approvals.json')), ['kaneo/kaneo_projects']);
+  await removeToolApprovals(path.join(dataDir, 'tool-approvals.json'), ['kaneo/kaneo_projects']);
+  await assert.rejects(broker.requestToolPermission(chat('reject'), { name: 'kaneo' }, { name: 'kaneo_projects' }, {}), /not approved/);
+});

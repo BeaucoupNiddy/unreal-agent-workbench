@@ -1,15 +1,25 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { normalizeKaneoUrl } from "./kaneo.mjs";
 
 export const defaultMcpSettings = Object.freeze({
   appleNotes: true,
-  appleCalendar: true
+  appleCalendar: true,
+  kaneo: false,
+  kaneoUrl: ""
 });
+
+function kaneoUrl(value) {
+  try { return normalizeKaneoUrl(value); }
+  catch { return ""; }
+}
 
 export function normalizeMcpSettings(value) {
   return {
     appleNotes: typeof value?.appleNotes === "boolean" ? value.appleNotes : defaultMcpSettings.appleNotes,
-    appleCalendar: typeof value?.appleCalendar === "boolean" ? value.appleCalendar : defaultMcpSettings.appleCalendar
+    appleCalendar: typeof value?.appleCalendar === "boolean" ? value.appleCalendar : defaultMcpSettings.appleCalendar,
+    kaneo: typeof value?.kaneo === "boolean" ? value.kaneo : defaultMcpSettings.kaneo,
+    kaneoUrl: kaneoUrl(value?.kaneoUrl)
   };
 }
 
@@ -31,15 +41,23 @@ export async function saveMcpSettings(filePath, value) {
   return settings;
 }
 
-export function configuredMcpServers(settings, { nodePath, appleServerPath }) {
+export function configuredMcpServers(settings, { nodePath, appleServerPath, kaneoServerPath }) {
+  const servers = [];
   const enabled = [];
   if (settings.appleNotes) enabled.push("notes");
   if (settings.appleCalendar) enabled.push("calendar");
-  if (!enabled.length) return [];
-  return [{
+  if (enabled.length) servers.push({
     name: "apple-productivity",
     command: nodePath,
     args: [appleServerPath],
     env: [{ name: "APPLE_MCP_CAPABILITIES", value: enabled.join(",") }]
-  }];
+  });
+  // The Kaneo API key stays in the keychain; only the address travels with the chat.
+  if (settings.kaneo && settings.kaneoUrl && kaneoServerPath) servers.push({
+    name: "kaneo",
+    command: nodePath,
+    args: [kaneoServerPath],
+    env: [{ name: "KANEO_BASE_URL", value: settings.kaneoUrl }]
+  });
+  return servers;
 }

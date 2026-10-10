@@ -2,14 +2,14 @@
 import net from "node:net";
 
 const [action, firstArgument, second, thirdArgument] = process.argv.slice(2);
-const usage = "Usage:\n  unreal-capability request-write '{\"folders\":[\"~/specific/folder\"],\"reason\":\"why write access is needed\"}'\n  unreal-capability project-history '{\"query\":\"prior decision or topic\"}'\n  unreal-capability web-search '{\"objective\":\"...\",\"queries\":[\"...\"]}'\n  unreal-capability web-fetch '{\"urls\":[\"https://...\"],\"objective\":\"...\"}'\n  unreal-capability list [query]\n  unreal-capability schema <server> <tool>\n  unreal-capability call <server> <tool> '<json>'\n  unreal-capability plan '[{\"content\":\"step\",\"status\":\"pending|in_progress|completed\"}]'\n  unreal-capability agents\n  unreal-capability delegate '{\"agent\":\"id\",\"task\":\"complete instructions\"}'\n  unreal-capability swarm '{\"task\":\"the problem\",\"agents\":[\"id\",\"id\"]}'\n  unreal-capability swarm-send '{\"to\":\"all\",\"message\":\"...\"}'\n  unreal-capability swarm-inbox";
+const usage = "Usage:\n  unreal-capability request-write '{\"folders\":[\"~/specific/folder\"],\"reason\":\"why write access is needed\"}'\n  unreal-capability project-history '{\"query\":\"prior decision or topic\"}'\n  unreal-capability web-search '{\"objective\":\"...\",\"queries\":[\"...\"]}'\n  unreal-capability web-fetch '{\"urls\":[\"https://...\"],\"objective\":\"...\"}'\n  unreal-capability list [query]\n  unreal-capability schema <server> <tool>\n  unreal-capability call <server> <tool> '<json>'\n  unreal-capability plan '[{\"content\":\"step\",\"status\":\"pending|in_progress|completed\"}]'\n  unreal-capability agents\n  unreal-capability delegate '{\"agent\":\"id\",\"task\":\"complete instructions\"}'\n  unreal-capability swarm '{\"task\":\"the problem\",\"agents\":[\"id\",\"id\"]}'\n  unreal-capability swarm-send '{\"to\":\"all\",\"message\":\"...\"}'\n  unreal-capability swarm-inbox\n  unreal-capability browser '{\"action\":\"open\",\"url\":\"http://localhost:3000\"}'\n    actions: open snapshot click type press select hover wait scroll back forward reload\n             screenshot console network eval tabs viewport close";
 let first = firstArgument;
 let third = thirdArgument;
-if (!process.stdin.isTTY && ((["web-search", "web_search", "web-fetch", "web_fetch", "project-history", "project_history", "request-write", "plan", "delegate", "swarm", "swarm-send"].includes(action) && !first)
+if (!process.stdin.isTTY && ((["web-search", "web_search", "web-fetch", "web_fetch", "project-history", "project_history", "request-write", "plan", "delegate", "swarm", "swarm-send", "browser"].includes(action) && !first)
   || (action === "call" && !third))) {
   let stdin = "";
   for await (const chunk of process.stdin) stdin += chunk.toString("utf8");
-  if (["web-search", "web_search", "web-fetch", "web_fetch", "project-history", "project_history", "request-write", "plan", "delegate", "swarm", "swarm-send"].includes(action) && !first) first = stdin.trim();
+  if (["web-search", "web_search", "web-fetch", "web_fetch", "project-history", "project_history", "request-write", "plan", "delegate", "swarm", "swarm-send", "browser"].includes(action) && !first) first = stdin.trim();
   else if (action === "call" && !third) third = stdin.trim();
 }
 if (["--help", "-h", "help"].includes(firstArgument) || ["--help", "-h", "help", undefined].includes(action)) {
@@ -73,6 +73,12 @@ if (action === "list" || action === "search") {
   try { args = JSON.parse(first); }
   catch { console.error("Swarm message arguments must be JSON, for example '{\"to\":\"all\",\"message\":\"...\"}'."); process.exit(2); }
   request = { sessionId, action: "swarm_send", to: args.to, message: args.message };
+} else if (action === "browser" && first) {
+  let args;
+  try { args = JSON.parse(first); }
+  catch { console.error("Browser arguments must be JSON, for example '{\"action\":\"open\",\"url\":\"http://localhost:3000\"}'."); process.exit(2); }
+  if (!args || typeof args !== "object" || Array.isArray(args)) { console.error("Browser arguments must be a JSON object with an action."); process.exit(2); }
+  request = { sessionId, action: "browser", arguments: args };
 } else if (action === "swarm-inbox") {
   request = { sessionId, action: "swarm_inbox" };
 } else if (action === "agents") {

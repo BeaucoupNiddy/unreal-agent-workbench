@@ -19,6 +19,7 @@ import { subscriptionIncrease } from "./subscription-delta.js";
 import { RecentTranscripts } from "./recent-transcripts.js";
 import { newInputId, recoverInputId, finishInputId } from "./input-recovery.js";
 import { setupRunCommand } from "./run-command.js";
+import { setupBrowserPanel } from "./browser-panel.js";
 import { addChoices, appendSubagent, applyModelToCards, collectSubagents, delegationChoices, inheritModel, modelChoices, renderSubagents, subagentPresets } from "./agents-settings.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -48,7 +49,8 @@ const state = {
   sidebarOrder: { projects: [], chats: {} },
   queuedInputs: [], entries: [], byMessage: new Map(), byTool: new Map(), running: false, promptRequests: 0, stopping: false, taskError: "", connection: "Connecting", creatingChat: false, submitting: false, attachments: [],
   pendingDeleteId: null, deletingChat: false, pendingProjectId: null, editingProjectId: null, editingProjectPath: null, editingLegacyProject: false, deletingProject: false,
-  capabilities: { appleNotes: true, appleCalendar: true },
+  capabilities: { appleNotes: true, appleCalendar: true, kaneo: false, kaneoUrl: "" },
+  kaneoKeySaved: false,
   generation: { memoryEnabled: true, memoryModel: "gpt-6-luna", titleEnabled: true, titleModel: "gpt-6-luna" },
   generationModels: [],
   localPresets: [], editingLocalProvider: null, localProviderBusy: false,
@@ -104,6 +106,7 @@ const scrollFollow = createScrollFollow(ui.conversation, { onChange: (following)
 ui.jumpLatest.addEventListener("click", () => scrollFollow.follow());
 
 let commandPanel = null;
+let browserPanel = null;
 function basename(value = "") { return value.split("/").filter(Boolean).pop() || value || "Workspace"; }
 function brand() { return state.prefs.jambalayaMode ? BRANDING.jambalaya : BRANDING.default; }
 function displayModel(value) {
@@ -150,6 +153,7 @@ function renderTaskStatus() {
   ui.liveState.disabled = !state.progressTurns.length;
   ui.timelineButton.disabled = !state.currentId;
   commandPanel?.sync();
+  browserPanel?.sync();
   ui.liveState.title = state.progressTurns.length ? `View turn timeline — ${status.label}` : (status.detail ? `${status.label} — ${status.detail}` : status.label);
   return status;
 }
@@ -324,10 +328,9 @@ function renderSessions() {
     const indicator = document.createElement("span"); indicator.className = `session-state ${sessionState(item)}`;
     const details = document.createElement("span"); details.className = "session-copy";
     const name = document.createElement("strong"); name.textContent = item.title || "Untitled chat";
-    const metaLine = document.createElement("small");
-    const time = document.createElement("span"); time.textContent = relativeTime(item.updatedAt);
-    const model = document.createElement("span"); model.textContent = displayModel(item.currentModel);
-    metaLine.append(time, model); details.append(name, metaLine); button.append(indicator, details);
+    const time = document.createElement("small"); time.textContent = relativeTime(item.updatedAt);
+    button.title = `${item.title || "Untitled chat"} · ${displayModel(item.currentModel)}`;
+    details.append(name, time); button.append(indicator, details);
     button.addEventListener("click", () => selectSession(item.sessionId));
 
     const remove = document.createElement("button"); remove.type = "button"; remove.className = "chat-delete";
@@ -351,7 +354,7 @@ function renderSessions() {
     const groupKey = chatGroupKey(project);
     const chats = orderedChats(state.sessions.filter((item) => projectForSession(item)?.path === project.path), groupKey);
     const expanded = state.expandedProjectPaths.has(project.path);
-    const group = document.createElement("section"); group.className = "project-group";
+    const group = document.createElement("section"); group.className = `project-group${expanded ? " expanded" : ""}`;
     group.addEventListener("dragover", (event) => {
       if (event.dataTransfer.types.includes("application/x-unreal-project")) { event.preventDefault(); row.classList.add("drag-over"); }
     });
@@ -361,7 +364,7 @@ function renderSessions() {
       const id = event.dataTransfer.getData("application/x-unreal-project");
       if (projects.some((item) => item.id === id) && id !== project.id) { event.preventDefault(); reorderProjects(id, project.id); }
     });
-    const row = document.createElement("div"); row.className = `project-row${project.path === state.currentProjectPath ? " active" : ""}`;
+    const row = document.createElement("div"); row.className = `project-row${project.path === state.currentProjectPath ? (state.currentId ? " current" : " active") : ""}`;
     addReorderHandle(row, { label: "project", id: project.id,
       ids: () => ensureOrder(state.sidebarOrder.projects, projects, (item) => item.id),
       onChange: (ids) => { state.sidebarOrder.projects = ids; saveSidebarOrder(); renderSessions(); }
@@ -373,11 +376,16 @@ function renderSessions() {
 
     const select = document.createElement("button"); select.type = "button"; select.className = "project-select";
     select.setAttribute("aria-label", `Open project ${project.name}`);
-    const glyph = document.createElement("span"); glyph.className = "project-glyph"; glyph.textContent = "▰";
+    select.title = project.path;
+    const glyph = document.createElementNS("http://www.w3.org/2000/svg", "svg"); glyph.classList.add("project-glyph");
+    glyph.setAttribute("viewBox", "0 0 24 24"); glyph.setAttribute("aria-hidden", "true"); glyph.setAttribute("focusable", "false");
+    const folder = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    folder.setAttribute("d", "M3 7.5A1.5 1.5 0 0 1 4.5 6h4.4l2 2h8.6A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5Z");
+    glyph.append(folder);
     const copy = document.createElement("span"); copy.className = "project-copy";
     const title = document.createElement("strong"); title.textContent = project.name;
-    const meta = document.createElement("small"); meta.textContent = project.path;
-    copy.append(title, meta); select.append(glyph, copy);
+    const count = document.createElement("small"); count.className = "project-count"; count.textContent = chats.length ? String(chats.length) : "";
+    copy.append(title); select.append(glyph, copy, count);
     select.addEventListener("click", () => selectProject(project.path));
     row.append(toggle, select);
 
@@ -1755,7 +1763,7 @@ async function openPreferences() {
   form.elements.jambalayaMode.checked = state.prefs.jambalayaMode;
   form.elements.showThoughts.checked = state.prefs.showThoughts;
   form.elements.usageMetric.value = state.prefs.usageMetric;
-  void refreshSettingsSubscriptionUsage(); void refreshOpenRouterKey();
+  void refreshSettingsSubscriptionUsage(); void refreshOpenRouterKey(); void refreshToolApprovals();
   $("#modelSearch").value = ""; $("#savePreferences").disabled = true;
   renderSettingsModels(); ui.preferencesDialog.showModal(); selectSettingsTab("dashboard");
   const results = await Promise.allSettled([
@@ -1764,7 +1772,9 @@ async function openPreferences() {
   ]);
   if (loadId !== state.preferencesLoadId) return;
   const [capabilities, generation, defaults, catalog, agents] = results;
-  if (capabilities.status === "fulfilled") state.capabilities = capabilities.value.settings;
+  if (capabilities.status === "fulfilled") {
+    state.capabilities = capabilities.value.settings; state.kaneoKeySaved = capabilities.value.kaneoKeySaved === true;
+  }
   if (generation.status === "fulfilled") {
     state.generation = generation.value.settings; state.generationModels = generation.value.models || [];
   }
@@ -1797,6 +1807,7 @@ async function openPreferences() {
   renderSubagents($("#subagentList"), agentSettings.subagents, state.modelProviders, syncSubagentControls);
   form.elements.appleNotes.checked = state.capabilities.appleNotes;
   form.elements.appleCalendar.checked = state.capabilities.appleCalendar;
+  renderKaneoConnection(form);
   for (const name of ["memoryModel", "titleModel"]) {
     form.elements[name].replaceChildren(...state.generationModels.map((model) => {
       const option = document.createElement("option");
@@ -1928,6 +1939,34 @@ function renderOpenRouterKey() {
   $("#removeOpenrouterKey").hidden = !configured;
   $("#openrouterKeyInput").placeholder = configured ? "Paste a new key to replace the saved one" : "Paste your key (sk-or-…)";
   syncOpenRouterWarning();
+}
+
+async function refreshToolApprovals() {
+  const list = $("#toolApprovalList");
+  let tools = [];
+  try { tools = (await requestJson("/api/tool-approvals")).tools || []; }
+  catch { list.replaceChildren(); return; }
+  list.replaceChildren(...tools.map((key) => {
+    const item = document.createElement("li");
+    const name = document.createElement("span"); name.textContent = key.replace("/", ": ");
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Stop always allowing ${key}`);
+    remove.addEventListener("click", async () => {
+      remove.disabled = true;
+      try { await requestJson("/api/tool-approvals", { method: "DELETE", body: JSON.stringify({ tools: [key] }) }); item.remove(); }
+      catch (error) { remove.disabled = false; showToast(error.message); }
+    });
+    item.append(name, remove);
+    return item;
+  }));
+}
+
+function renderKaneoConnection(form) {
+  form.elements.kaneo.checked = state.capabilities.kaneo === true;
+  form.elements.kaneoUrl.value = state.capabilities.kaneoUrl || "";
+  form.elements.kaneoApiKey.value = ""; form.elements.kaneoClearKey.checked = false;
+  $("#kaneoKeyHint").textContent = state.kaneoKeySaved ? "A key is saved. Leave blank to keep it." : "In Kaneo: Settings, Account, Developer, Create API key";
+  $("#kaneoClearKeyRow").hidden = !state.kaneoKeySaved;
 }
 
 async function refreshOpenRouterKey() {
@@ -2254,6 +2293,10 @@ $("#agentsAddOpenrouterKey").addEventListener("click", () => {
 $("#subagentList").addEventListener("change", (event) => { if (event.target.dataset.agentField === "provider") syncOpenRouterWarning(); });
 $("#preferencesForm").elements.defaultProvider.addEventListener("change", () => syncOpenRouterWarning());
 $("#preferencesForm").elements.memoryEnabled.addEventListener("change", () => syncGenerationControls());
+// Entering a Kaneo key means the user wants the connection on.
+$("#preferencesForm").elements.kaneoApiKey.addEventListener("input", (event) => {
+  if (event.target.value.trim()) $("#preferencesForm").elements.kaneo.checked = true;
+});
 $("#preferencesForm").elements.titleEnabled.addEventListener("change", () => syncGenerationControls());
 $("#moreActions").addEventListener("click", async () => {
   const current = state.sessions.find((item) => item.sessionId === state.currentId);
@@ -2281,7 +2324,11 @@ $("#preferencesForm").addEventListener("submit", async (event) => {
     const [capabilities, , generation, agents] = await Promise.all([
       requestJson("/api/capabilities", { method: "PUT", body: JSON.stringify({
         appleNotes: form.elements.appleNotes.checked,
-        appleCalendar: form.elements.appleCalendar.checked
+        appleCalendar: form.elements.appleCalendar.checked,
+        kaneo: form.elements.kaneo.checked,
+        kaneoUrl: form.elements.kaneoUrl.value.trim(),
+        kaneoApiKey: form.elements.kaneoApiKey.value.trim(),
+        clearKaneoKey: form.elements.kaneoClearKey.checked
       }) }),
       requestJson("/api/default-model", { method: "PUT", body: JSON.stringify({ provider: form.elements.defaultProvider.value,
         model: form.elements.defaultModel.value, thoughtLevel: form.elements.defaultThoughtLevel.value }) }),
@@ -2300,11 +2347,14 @@ $("#preferencesForm").addEventListener("submit", async (event) => {
         subagents: collectSubagents($("#subagentList"))
       }) })
     ]);
-    state.capabilities = capabilities.settings;
+    state.capabilities = capabilities.settings; state.kaneoKeySaved = capabilities.kaneoKeySaved === true;
+    renderKaneoConnection(form);
+    const kaneoNote = capabilities.kaneoCheck?.checked ? ` Kaneo connected${capabilities.kaneoCheck.user ? ` as ${capabilities.kaneoCheck.user}` : ""}; open a new chat to use it.`
+      : capabilities.kaneoCheck ? " Kaneo key saved but could not be checked right now." : "";
     state.generation = generation.settings;
     renderSubagents($("#subagentList"), agents.settings.subagents, state.modelProviders, syncSubagentControls);
     ui.preferencesDialog.close();
-    showToast("Preferences saved");
+    showToast(`Preferences saved.${kaneoNote}`);
   } catch (error) { showToast(error.message); }
   finally { saveButton.disabled = false; saveButton.textContent = "Save preferences"; }
 });
@@ -2328,6 +2378,11 @@ commandPanel = setupRunCommand({
   }
 });
 commandPanel.sync();
+browserPanel = setupBrowserPanel({
+  button: $("#browserButton"), panel: $("#browserPanel"), getSessionId: () => state.currentId,
+  isRunning: () => Boolean(state.running), onOpen: () => { closeProgressPanel(); closeControlPopover(); commandPanel?.close(); }
+});
+browserPanel.sync();
 ui.liveProgressPanel.querySelector(".progress-turn-select").addEventListener("change", (event) => {
   state.selectedProgressTurn = Number(event.target.value); renderLiveProgress();
 });

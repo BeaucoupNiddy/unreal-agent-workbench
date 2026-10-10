@@ -11,7 +11,7 @@
     <title>Unreal Agent</title>
     <link id="favicon" rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link id="manifest" rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=29" />
+    <link rel="stylesheet" href="/styles.css?v=33" />
   </head>
   <body data-theme="system" data-accent="lime" data-brand="default">
     <div class="app-shell">
@@ -61,6 +61,7 @@
             </div>
           </div>
           <div class="topbar-actions">
+            <button class="timeline-button browser-button" id="browserButton" type="button" aria-controls="browserPanel" aria-expanded="false" title="Watch the agents' browser in this chat" disabled>Browser<span class="browser-dot" aria-label="New browser activity" hidden></span></button>
             <button class="timeline-button" id="commandButton" type="button" aria-controls="commandPanel" aria-expanded="false" title="Run a shell command in this chat's folder" disabled>Terminal</button>
             <section class="live-progress command-panel" id="commandPanel" aria-label="Run command" hidden>
               <div class="progress-heading"><strong>Run command</strong><span class="command-mode"></span></div>
@@ -139,6 +140,33 @@
           <p class="footnote" id="brandFootnote">Unreal Agent runs locally. Review important changes before shipping.</p>
         </footer>
       </main>
+
+      <aside class="browser-panel" id="browserPanel" aria-label="Agent browser" hidden>
+        <div class="browser-panel-head">
+          <strong>Browser</strong>
+          <select class="browser-agent" aria-label="Show the browser of" hidden></select>
+          <button class="icon-button quiet browser-close" type="button" aria-label="Close browser panel" title="Close">×</button>
+        </div>
+        <details class="browser-signins">
+          <summary>Signed-in sites <span class="browser-signin-count"></span></summary>
+          <p class="browser-signin-note">Sign in once in a browser window on this Mac, then close the window. Agents' browsers reuse that session in every chat. Your own Chrome profile and passwords are never read.</p>
+          <ul class="browser-signin-list"></ul>
+          <form class="browser-signin-form">
+            <input class="browser-signin-url" type="text" aria-label="Site to sign in to" placeholder="kaneo.example.com" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <button type="submit">Sign in</button>
+          </form>
+          <small class="browser-signin-status" aria-live="polite"></small>
+        </details>
+        <div class="browser-addressbar"><span class="browser-address">No page open</span><span class="browser-page-title"></span></div>
+        <div class="browser-frame">
+          <img alt="" title="Open full size" hidden />
+          <p class="browser-frame-empty">When an agent opens a page, it appears here.</p>
+          <div class="browser-frame-bar"><span class="browser-viewing" hidden></span><button class="browser-live" type="button" hidden>Back to latest</button></div>
+        </div>
+        <div class="browser-steps-head">Steps <small>newest first</small></div>
+        <div class="browser-steps"></div>
+        <p class="browser-empty">No browser activity in this chat yet. Agents use the browser to check pages and local apps.</p>
+      </aside>
     </div>
     <dialog class="modal chat-search-modal" id="chatSearchDialog" aria-labelledby="chatSearchTitle">
       <div class="modal-card">
@@ -262,6 +290,19 @@
           <label class="switch-row"><span>Apple Calendar<small>Search and create events after approval</small></span><input type="checkbox" name="appleCalendar" /></label>
           <p class="theme-hint">Capabilities are lazy and apply to new chats. macOS asks for Automation access the first time one runs.</p>
         </fieldset>
+        <fieldset><legend>Connections</legend>
+          <label class="switch-row"><span>Kaneo<small>Read, create, update, label, and move tasks after approval</small></span><input type="checkbox" name="kaneo" /></label>
+          <div class="openrouter-key kaneo-connection">
+            <label>Kaneo address<input name="kaneoUrl" type="url" placeholder="https://cloud.kaneo.app" autocomplete="off" aria-label="Kaneo address" /></label>
+            <label>API key <small id="kaneoKeyHint">In Kaneo: Settings, Account, Developer, Create API key</small><input name="kaneoApiKey" type="password" autocomplete="new-password" aria-label="Kaneo API key" /></label>
+            <label class="kaneo-clear-key" id="kaneoClearKeyRow" hidden><input type="checkbox" name="kaneoClearKey" />Remove the saved API key</label>
+            <p class="theme-hint">Use your own Kaneo server's address or Kaneo Cloud. The key is checked with Kaneo, then saved in your Mac's keychain.</p>
+          </div>
+        </fieldset>
+        <fieldset><legend>Always allowed tools</legend>
+          <ul class="tool-approvals" id="toolApprovalList"></ul>
+          <p class="theme-hint" id="toolApprovalHint">Choose "Always allow" on an approval to stop being asked for that tool in every chat. Remove a tool here to be asked again.</p>
+        </fieldset>
         </section>
         <div class="modal-actions"><button type="button" id="cancelPreferences">Cancel</button><button class="primary" id="savePreferences" value="default">Save preferences</button></div>
       </form>
@@ -291,6 +332,6 @@
       </form>
     </dialog>
     <div class="toast" id="toast" role="status" hidden></div>
-    <script type="module" src="/app.js?v=40"></script>
+    <script type="module" src="/app.js?v=46"></script>
   </body>
 </html>

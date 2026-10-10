@@ -12,6 +12,8 @@ import { promisify } from "node:util";
 import { randomUUID, createHash } from "node:crypto";
 import { ConsoleInputs } from "./console-inputs.mjs";
 import { configuredMcpServers, readMcpSettings, saveMcpSettings } from "./mcp-settings.mjs";
+import { readToolApprovals, removeToolApprovals, toolApprovalsFileName } from "../unreal-agent-acp/src/tool-approvals.mjs";
+import { clearKaneoKey, normalizeKaneoUrl, readKaneoKey, saveKaneoKey, validKaneoKey, verifyKaneoKey } from "./kaneo.mjs";
 import { assertManagedHydra, hydraServiceLabel } from "./hydra-service.mjs";
 import { AutoTitleScheduler, recoverProvisionalTitle } from "./auto-title.mjs";
 import { BackgroundGenerator, readBackgroundConnection, shouldGenerateAfterPrompt } from "./background-generation.mjs";
@@ -20,6 +22,9 @@ import { readAgentSettings, saveAgentSettings } from "../unreal-agent-acp/src/ag
 import { clearOpenRouterKey, readOpenRouterKey, saveOpenRouterKey, validOpenRouterKey, verifyOpenRouterKey } from "../unreal-agent-acp/src/openrouter-key.mjs";
 import { generationModels, readGenerationSettings, saveGenerationSettings } from "./generation-settings.mjs";
 import { UnrealAgentBridge } from "../unreal-agent-acp/src/bridge.mjs";
+import { browserActivityDirectory, readBrowserActivity, readBrowserImage } from "../unreal-agent-acp/src/browser-activity.mjs";
+import { BrowserManager } from "../unreal-agent-acp/src/browser.mjs";
+import { forgetSignIns, normalizeSignInUrl, signedInSites } from "../unreal-agent-acp/src/browser-sign-in.mjs";
 import { readLocalProviders, saveLocalProvider, normalizeLocalProvider, discoverLocalModels } from "../unreal-agent-acp/src/local-providers.mjs";
 
 import { searchChats } from "./chat-search.mjs";
@@ -45,8 +50,10 @@ const agentDataDir = path.join(homedir(), "Library", "Application Support", "Unr
 const catalogFile = path.join(agentDataDir, "openrouter-models.json");
 const defaultModelFile = path.join(agentDataDir, "default-model.json");
 const modelFavoritesFile = path.join(agentDataDir, "model-favorites.json");
+const toolApprovalsFile = path.join(agentDataDir, toolApprovalsFileName);
 const hydraCli = path.join(root, "..", "hydra-gateway", "node_modules", ".bin", "hydra-acp");
 const appleMcpServer = path.join(root, "..", "apple-productivity-mcp", "server.mjs");
+const kaneoMcpServer = path.join(root, "kaneo-mcp.mjs");
 const runner = process.env.UNREAL_AGENT_RUNNER || path.join(homedir(), ".local", "bin", "unreal-agent-runner");
 const execFileAsync = promisify(execFile);
 const bridges = new Map();
@@ -814,13 +821,30 @@ async function sessionUsageDetails(sessionId) {
     subagents: subagentUsage(meta.usage?.events) };
 }
 
+// The Kaneo key is checked with the instance before it reaches the keychain.
+async function saveCapabilities(body) {
+  const kaneoUrl = normalizeKaneoUrl(body?.kaneoUrl);
+  const newKey = typeof body?.kaneoApiKey === "string" && body.kaneoApiKey.trim() ? validKaneoKey(body.kaneoApiKey) : "";
+  if (body?.kaneo === true && !kaneoUrl) throw new Error("Enter your Kaneo address to turn Kaneo on.");
+  let kaneoCheck = null;
+  if (newKey) {
+    if (!kaneoUrl) throw new Error("Enter your Kaneo address before saving its API key.");
+    kaneoCheck = await verifyKaneoKey(kaneoUrl, newKey);
+    if (!kaneoCheck.valid) throw new Error("Kaneo rejected that API key. Check the address and copy the whole key from Kaneo.");
+  }
+  const settings = await saveMcpSettings(mcpSettingsFile, { ...body, kaneoUrl });
+  if (newKey) await saveKaneoKey(newKey);
+  else if (body?.clearKaneoKey === true) await clearKaneoKey();
+  return { settings, kaneoKeySaved: Boolean(await readKaneoKey()), kaneoCheck, appliesTo: "new-chats" };
+}
+
 async function createSession(body) {
   const connection = await new HydraConnection().connect();
   try {
     const mcpSettings = await readMcpSettings(mcpSettingsFile);
     const result = await connection.request("session/new", {
       cwd: body.cwd,
-      mcpServers: configuredMcpServers(mcpSettings, { nodePath: process.execPath, appleServerPath: appleMcpServer }),
+      mcpServers: configuredMcpServers(mcpSettings, { nodePath: process.execPath, appleServerPath: appleMcpServer, kaneoServerPath: kaneoMcpServer }),
       _meta: {
         "hydra-acp": { agentId: "unreal", ...(body.title ? { title: body.title } : {}) },
         "unreal-agent": { projectHistory: body.oneOff !== true }
@@ -847,6 +871,26 @@ async function readAgentMetadata(sessionId) {
   try { meta = JSON.parse(await fs.readFile(path.join(agentDataDir, 'metadata', `${hash}.json`), 'utf8')); }
   catch { return null; }
   return meta.id === session.upstreamSessionId ? meta : null;
+}
+
+// The visible sign-in window for the agents' browser runs from the console,
+// which is the process the user is looking at.
+const signInBrowser = new BrowserManager({ dataDir: agentDataDir });
+let signInError = "";
+async function signInStatus() {
+  const settings = await readMcpSettings(mcpSettingsFile).catch(() => ({}));
+  return { sites: await signedInSites(agentDataDir), open: signInBrowser.signInOpen, error: signInError,
+    suggestedUrl: settings?.kaneo && settings?.kaneoUrl ? settings.kaneoUrl : "" };
+}
+
+// Console chat → the bridge chat whose browser steps the Browser panel shows.
+const browserChats = new Map();
+async function browserDirectoryFor(sessionId) {
+  const cached = browserChats.get(sessionId);
+  if (cached && (cached.id || Date.now() - cached.checkedAt < 15_000)) return cached.id ? browserActivityDirectory(agentDataDir, cached.id) : null;
+  const meta = await readAgentMetadata(sessionId).catch(() => null);
+  browserChats.set(sessionId, { id: meta?.id || null, checkedAt: Date.now() });
+  return meta?.id ? browserActivityDirectory(agentDataDir, meta.id) : null;
 }
 
 const commandRunner = new CommandRunner({ resolveAccess: async (sessionId) => {
@@ -927,11 +971,19 @@ const server = createServer(async (req, res) => {
       } catch (error) { return json(res, 404, { error: error.message }); }
     }
     if (req.method === "GET" && url.pathname === "/api/capabilities") {
-      return json(res, 200, { settings: await readMcpSettings(mcpSettingsFile), appliesTo: "new-chats" });
+      return json(res, 200, { settings: await readMcpSettings(mcpSettingsFile), kaneoKeySaved: Boolean(await readKaneoKey()), appliesTo: "new-chats" });
     }
     if (req.method === "PUT" && url.pathname === "/api/capabilities") {
-      const settings = await saveMcpSettings(mcpSettingsFile, await readJson(req));
-      return json(res, 200, { settings, appliesTo: "new-chats" });
+      const body = await readJson(req);
+      try { return json(res, 200, await saveCapabilities(body)); }
+      catch (error) { return json(res, 400, { error: error.message }); }
+    }
+    if (req.method === "GET" && url.pathname === "/api/tool-approvals") {
+      return json(res, 200, { tools: await readToolApprovals(toolApprovalsFile) });
+    }
+    if (req.method === "DELETE" && url.pathname === "/api/tool-approvals") {
+      const body = await readJson(req);
+      return json(res, 200, { tools: await removeToolApprovals(toolApprovalsFile, body?.tools || []) });
     }
     if (req.method === "GET" && url.pathname === "/api/default-model") {
       return json(res, 200, { settings: await readDefaultModel(defaultModelFile), appliesTo: "new-chats" });
@@ -1071,6 +1123,37 @@ const server = createServer(async (req, res) => {
       }
       await execFileAsync("/usr/bin/open", ["-a", "Zed", canonicalCwd], { timeout: 10_000 });
       return json(res, 200, { opened: true });
+    }
+    if (url.pathname === "/api/browser/sign-ins") {
+      if (req.method === "GET") return json(res, 200, await signInStatus());
+      if (req.method === "POST") {
+        let address;
+        try { address = normalizeSignInUrl((await readJson(req)).url); }
+        catch (error) { return json(res, 400, { error: error.message }); }
+        if (signInBrowser.signInOpen) return json(res, 409, { error: "A sign-in window is already open. Close it first." });
+        signInError = "";
+        signInBrowser.openSignInWindow(address).catch((error) => { signInError = error.message || "The sign-in window could not open."; });
+        return json(res, 202, await signInStatus());
+      }
+      if (req.method === "DELETE") {
+        await forgetSignIns(agentDataDir, url.searchParams.get("site") || "");
+        return json(res, 200, await signInStatus());
+      }
+    }
+    const browserMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/browser(?:\/image\/([^/]+))?$/);
+    if (browserMatch && req.method === "GET") {
+      const sessionId = safeSessionId(decodeURIComponent(browserMatch[1]));
+      if (!sessionId) return json(res, 400, { error: "Invalid session." });
+      const directory = await browserDirectoryFor(sessionId);
+      if (browserMatch[2]) {
+        const name = decodeURIComponent(browserMatch[2]);
+        const image = directory ? await readBrowserImage(directory, name) : null;
+        if (!image) return json(res, 404, { error: "Not found" });
+        res.writeHead(200, { "content-type": name.endsWith(".png") ? "image/png" : "image/jpeg", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+        return res.end(image);
+      }
+      if (!directory) return json(res, 200, { total: 0, reset: false, entries: [], agents: [] });
+      return json(res, 200, await readBrowserActivity(directory, { after: url.searchParams.get("after") }));
     }
     if (match) {
       const sessionId = safeSessionId(decodeURIComponent(match[1]));

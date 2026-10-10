@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.5.0",
-    "mcp-remote": "^0.14.3"
+    "mcp-remote": "^0.14.3",
+    "playwright-core": "1.63.0"
   },
   "engines": {
     "node": ">=22"
